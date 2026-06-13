@@ -82,6 +82,18 @@ export class FileTree {
 
     // Bind the global click-away handler for the context menu
     this._onDocClick = null;
+
+    /** Current filter query (#1) */
+    this._filterQuery = '';
+
+    /** Set of selected file paths for bulk ops (#8) */
+    this._selectedFiles = new Set();
+
+    /** Whether bulk selection mode is active (#8) */
+    this._bulkMode = false;
+
+    /** Recent files section collapsed state (#2) */
+    this._recentCollapsed = false;
   }
 
   // ─── render ─────────────────────────────────────────────────────────────
@@ -113,16 +125,252 @@ export class FileTree {
     container.innerHTML = '';
     container.classList.add('file-tree');
 
+    // ── Bulk action bar (#8) ──
+    this._renderBulkBar(container);
+
+    // ── Recent files section (#2) ──
+    this._renderRecentFiles(container);
+
     if (!tree || tree.length === 0) {
-      container.innerHTML =
+      container.innerHTML +=
         '<div style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:12px;">' +
         '<i class="fas fa-folder-open" style="font-size:24px;display:block;margin-bottom:8px;"></i>' +
         'Empty project. Create a new file to get started.</div>';
       return;
     }
 
-    for (const node of tree) {
-      this.renderNode(node, 0, container);
+    // ── Filtered or full tree (#1) ──
+    if (this._filterQuery) {
+      // Filter mode: show all matching files flat
+      const results = [];
+      this._collectMatching(tree, this._filterQuery.toLowerCase(), results);
+      if (results.length === 0) {
+        container.innerHTML +=
+          '<div style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:12px;">' +
+          '<i class="fas fa-search" style="font-size:18px;display:block;margin-bottom:6px;"></i>' +
+          `No files matching "${this._filterQuery}"</div>`;
+      } else {
+        for (const node of results) {
+          this.renderNode(node, 0, container);
+        }
+      }
+    } else {
+      for (const node of tree) {
+        this.renderNode(node, 0, container);
+      }
+    }
+
+    // ── Update stats footer (#9) ──
+    this._renderStats();
+  }
+
+  // ─── filterFiles (#1) ─────────────────────────────────────────────────
+
+  /**
+   * Set the filter query and re-render the tree.
+   * @param {string} query  Filter text (empty = clear filter).
+   */
+  filterFiles(query) {
+    this._filterQuery = (query || '').trim();
+    this.render();
+  }
+
+  /**
+   * Recursively collect all file nodes matching the query.
+   * @param {object[]} nodes
+   * @param {string} queryLower
+   * @param {object[]} results
+   * @private
+   */
+  _collectMatching(nodes, queryLower, results) {
+    for (const node of nodes) {
+      if (!node.isFolder && node.name.toLowerCase().includes(queryLower)) {
+        results.push(node);
+      }
+      if (node.children && node.children.length > 0) {
+        this._collectMatching(node.children, queryLower, results);
+      }
+    }
+  }
+
+  // ─── _renderBulkBar (#8) ──────────────────────────────────────────────
+
+  /**
+   * Render the bulk action bar if any files are selected.
+   * @private
+   */
+  _renderBulkBar(container) {
+    if (this._selectedFiles.size === 0) return;
+
+    const bar = document.createElement('div');
+    bar.className = 'bulk-action-bar visible';
+    bar.innerHTML = `
+      <span class="bulk-action-count">${this._selectedFiles.size} selected</span>
+      <button class="bulk-action-btn danger" data-action="delete">
+        <i class="fas fa-trash-alt"></i> Delete
+      </button>
+      <button class="bulk-action-btn" data-action="move">
+        <i class="fas fa-folder-tree"></i> Move
+      </button>
+      <button class="bulk-action-btn" data-action="clear">
+        <i class="fas fa-times"></i> Clear
+      </button>
+    `;
+    bar.querySelector('[data-action="delete"]').addEventListener('click', () => this._bulkDelete());
+    bar.querySelector('[data-action="move"]').addEventListener('click', () => this._bulkMove());
+    bar.querySelector('[data-action="clear"]').addEventListener('click', () => {
+      this._selectedFiles.clear();
+      this._bulkMode = false;
+      this.render();
+    });
+    container.appendChild(bar);
+  }
+
+  // ─── _bulkDelete (#8) ─────────────────────────────────────────────────
+
+  async _bulkDelete() {
+    if (!confirm(`Delete ${this._selectedFiles.size} file(s)?`)) return;
+    for (const path of this._selectedFiles) {
+      try {
+        await this.app.vfs.deleteFile(path);
+      } catch (e) { /* skip */ }
+    }
+    this._selectedFiles.clear();
+    this._bulkMode = false;
+    this.app.notifications?.toast('Selected files deleted.', 'info');
+    this.render();
+  }
+
+  // ─── _bulkMove (#8) ───────────────────────────────────────────────────
+
+  async _bulkMove() {
+    const target = prompt('Enter destination folder path:', 'MyApp/NewFolder');
+    if (!target) return;
+    for (const path of this._selectedFiles) {
+      const fileName = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path;
+      const newPath = `${target}/${fileName}`;
+      try {
+        await this.app.vfs.renameFile(path, newPath);
+      } catch (e) { /* skip */ }
+    }
+    this._selectedFiles.clear();
+    this._bulkMode = false;
+    this.app.notifications?.toast(`Moved files to ${target}`, 'success');
+    this.render();
+  }
+
+  // ─── _renderRecentFiles (#2) ──────────────────────────────────────────
+
+  /**
+   * Render the recent files section at the top of the navigator.
+   * @private
+   */
+  _renderRecentFiles(container) {
+    const recent = this._getRecentFiles();
+    if (recent.length === 0) return;
+
+    const section = document.createElement('div');
+    section.className = 'recent-files-section';
+
+    const header = document.createElement('div');
+    header.className = 'recent-files-header';
+    header.innerHTML = `<i class="fas fa-chevron-down chevron ${this._recentCollapsed ? 'collapsed' : ''}"></i> Recent`;
+    header.addEventListener('click', () => {
+      this._recentCollapsed = !this._recentCollapsed;
+      this.render();
+    });
+    section.appendChild(header);
+
+    if (!this._recentCollapsed) {
+      const body = document.createElement('div');
+      body.className = 'recent-files-body';
+      for (const entry of recent) {
+        const item = document.createElement('div');
+        item.className = 'recent-file-item';
+        const name = entry.path.includes('/') ? entry.path.slice(entry.path.lastIndexOf('/') + 1) : entry.path;
+        const icon = this.getIcon({ name, isFolder: false });
+        item.innerHTML = `<span>${icon}</span> <span>${name}</span> <span class="recent-time">${this._formatTime(entry.time)}</span>`;
+        item.addEventListener('click', () => {
+          this.app.openFile(entry.path);
+        });
+        body.appendChild(item);
+      }
+      section.appendChild(body);
+    }
+
+    container.appendChild(section);
+  }
+
+  /**
+   * Get the list of recent files from localStorage.
+   * @returns {Array<{path:string, time:number}>}
+   * @private
+   */
+  _getRecentFiles() {
+    try {
+      const raw = localStorage.getItem('ai-xcode-recent-files');
+      if (!raw) return [];
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Add a file to the recent files list (max 10).
+   * Called from app.openFile().
+   * @param {string} path
+   */
+  addRecentFile(path) {
+    let recent = this._getRecentFiles();
+    // Remove existing entry for this path
+    recent = recent.filter(e => e.path !== path);
+    // Add at front
+    recent.unshift({ path, time: Date.now() });
+    // Keep only last 10
+    recent = recent.slice(0, 10);
+    localStorage.setItem('ai-xcode-recent-files', JSON.stringify(recent));
+  }
+
+  /**
+   * Format a timestamp for the recent files list.
+   * @param {number} ts
+   * @returns {string}
+   * @private
+   */
+  _formatTime(ts) {
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  }
+
+  // ─── _renderStats (#9) ────────────────────────────────────────────────
+
+  /**
+   * Render project statistics in the sidebar footer.
+   * @private
+   */
+  async _renderStats() {
+    const footer = document.getElementById('sidebar-stats-footer');
+    if (!footer || !this.app.vfs) return;
+    try {
+      const stats = await this.app.vfs.getProjectStats();
+      const langBadges = stats.languages
+        .map(l => `<span class="stats-lang-badge">${l.label}</span>`)
+        .join('');
+      footer.innerHTML = `
+        <div class="stats-row"><span class="stats-label">Files</span><span class="stats-value">${stats.fileCount}</span></div>
+        <div class="stats-row"><span class="stats-label">Lines</span><span class="stats-value">${stats.totalLines.toLocaleString()}</span></div>
+        <div class="stats-row"><span class="stats-label">Folders</span><span class="stats-value">${stats.folderCount}</span></div>
+        <div class="stats-lang-list">${langBadges}</div>
+      `;
+    } catch (e) {
+      // Stats not critical — silently ignore
     }
   }
 
@@ -148,6 +396,42 @@ export class FileTree {
     // Active file highlight
     if (!node.isFolder && node.path === this.app.activeFile) {
       row.classList.add('active');
+    }
+
+    // Selected state (#8)
+    if (this._selectedFiles.has(node.path)) {
+      row.classList.add('selected');
+    }
+
+    // ── Tooltip: file info on hover (#7) ──
+    if (!node.isFolder) {
+      const fileNode = this.app.vfs._cache.get(node.path);
+      if (fileNode) {
+        const size = fileNode.content ? new Blob([fileNode.content]).size : 0;
+        const sizeStr = size < 1024 ? `${size}B` : size < 1048576 ? `${(size/1024).toFixed(1)}KB` : `${(size/1048576).toFixed(1)}MB`;
+        const lines = fileNode.content ? fileNode.content.split('\n').length : 0;
+        const lang = fileNode.language || 'plaintext';
+        const modDate = fileNode.modifiedAt ? new Date(fileNode.modifiedAt).toLocaleDateString() : '—';
+        row.setAttribute('data-tooltip', `${node.name}\nSize: ${sizeStr}\nLines: ${lines}\nLanguage: ${lang}\nModified: ${modDate}`);
+      }
+    }
+
+    // ── Checkbox (#8): shown for files when bulk mode is active ──
+    if (this._bulkMode && !node.isFolder) {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'tree-checkbox';
+      checkbox.checked = this._selectedFiles.has(node.path);
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (checkbox.checked) {
+          this._selectedFiles.add(node.path);
+        } else {
+          this._selectedFiles.delete(node.path);
+        }
+        this.render();
+      });
+      row.appendChild(checkbox);
     }
 
     // --- Icon ---
@@ -270,6 +554,19 @@ export class FileTree {
     this.render();
   }
 
+  // ─── toggleBulkMode (#8) ──────────────────────────────────────────────
+
+  /**
+   * Toggle bulk selection mode. When on, checkboxes appear next to files.
+   */
+  toggleBulkMode() {
+    this._bulkMode = !this._bulkMode;
+    if (!this._bulkMode) {
+      this._selectedFiles.clear();
+    }
+    this.render();
+  }
+
   // ─── showContextMenu ────────────────────────────────────────────────────
 
   /**
@@ -314,6 +611,12 @@ export class FileTree {
       items.push({ label: 'Delete', icon: 'fa-trash-alt', danger: true, action: () => this.delete(node) });
     } else {
       items.push({ label: 'Open', icon: 'fa-external-link-alt', action: () => this.app.openFile(node.path) });
+      items.push({ divider: true });
+      items.push({ label: this._bulkMode ? 'Select' : 'Enable Bulk Select', icon: 'fa-check-square', action: () => {
+        if (!this._bulkMode) this.toggleBulkMode();
+        this._selectedFiles.add(node.path);
+        this.render();
+      }});
       items.push({ divider: true });
       items.push({ label: 'Rename', icon: 'fa-pen', action: () => this.rename(node) });
       items.push({ label: 'Duplicate', icon: 'fa-copy', action: () => this.duplicate(node) });

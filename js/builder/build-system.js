@@ -195,6 +195,12 @@ export class BuildSystem {
     }
 
     this._updateStatusBar();
+    
+    // Reset toolbar buttons
+    const runBtn = document.getElementById('btn-run');
+    const stopBtn = document.getElementById('btn-stop');
+    if (runBtn) runBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
   }
 
   // ─── stop ───────────────────────────────────────────────────────────────
@@ -388,12 +394,10 @@ export class BuildSystem {
     const warnEl = document.getElementById('status-warnings');
 
     if (errEl) {
-      errEl.style.display = errors > 0 ? 'flex' : 'none';
-      errEl.innerHTML = `<i class="fas fa-times-circle"></i> ${errors}`;
+      errEl.innerHTML = `<i class="fas fa-times-circle"></i> ${errors} error${errors !== 1 ? 's' : ''}`;
     }
     if (warnEl) {
-      warnEl.style.display = warnings > 0 ? 'flex' : 'none';
-      warnEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${warnings}`;
+      warnEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${warnings} warning${warnings !== 1 ? 's' : ''}`;
     }
   }
 

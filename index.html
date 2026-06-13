@@ -51,6 +51,23 @@
 
       <input type="text" class="toolbar-search" id="toolbar-search" placeholder="Search... (⌘⇧F)">
 
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-group">
+        <button class="tb-btn" id="btn-find" data-tooltip="Find (⌘F)">
+          <i class="fas fa-search"></i>
+        </button>
+        <button class="tb-btn" id="btn-replace" data-tooltip="Replace (⌘H)">
+          <i class="fas fa-exchange-alt"></i>
+        </button>
+        <button class="tb-btn" id="btn-fold-all" data-tooltip="Fold All">
+          <i class="fas fa-compress-alt"></i>
+        </button>
+        <button class="tb-btn" id="btn-unfold-all" data-tooltip="Unfold All">
+          <i class="fas fa-expand-alt"></i>
+        </button>
+      </div>
+
       <div class="toolbar-spacer"></div>
 
       <div class="toolbar-group">
@@ -70,7 +87,38 @@
 
       <div class="toolbar-divider"></div>
 
+      <!-- Loading indicator (#4) -->
+      <div class="loading-indicator" id="loading-indicator">
+        <div class="loading-spinner"></div>
+        <span class="loading-text" id="loading-text">Working...</span>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
       <div class="toolbar-group">
+        <button class="tb-btn" id="btn-zen-mode" data-tooltip="Zen Mode (F11)">
+          <i class="fas fa-expand"></i>
+        </button>
+        <button class="tb-btn" id="btn-shortcuts" data-tooltip="Keyboard Shortcuts (?)">
+          <i class="fas fa-keyboard"></i>
+        </button>
+        <div class="tb-dropdown">
+          <button class="tb-btn" id="btn-tools" data-tooltip="Developer Tools">
+            <i class="fas fa-tools"></i>
+          </button>
+          <div class="tb-dropdown-menu" id="tools-dropdown" style="display:none;position:absolute;right:0;top:44px;background:var(--bg-toolbar);border:1px solid var(--border);border-radius:8px;z-index:1000;padding:4px;width:200px;box-shadow:0 4px 12px rgba(0,0,0,.3);">
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('snippet')"><i class="fas fa-code"></i> Snippet Manager</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('regex')"><i class="fas fa-search"></i> Regex Tester</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('color')"><i class="fas fa-palette"></i> Color Picker</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('json')"><i class="fas fa-brackets-curly"></i> JSON Formatter</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('base64')"><i class="fas fa-lock"></i> Base64 Encode/Decode</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('markdown')"><i class="fas fa-markdown"></i> Markdown Preview</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('rest')"><i class="fas fa-globe"></i> REST API Tester</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('cron')"><i class="fas fa-clock"></i> Cron Builder</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('hash')"><i class="fas fa-hashtag"></i> Hash Generator</button>
+            <button class="tb-dropdown-item" onclick="window.app.devTools.open('metrics')"><i class="fas fa-chart-bar"></i> Code Metrics</button>
+          </div>
+        </div>
         <button class="tb-btn" id="btn-settings" data-tooltip="Settings (⌘,)">
           <i class="fas fa-cog"></i>
         </button>
@@ -119,17 +167,46 @@
             <button class="tb-btn" id="btn-new-folder" data-tooltip="New Folder" style="width:22px;height:22px;">
               <i class="fas fa-folder-plus" style="font-size:11px;"></i>
             </button>
+            <button class="tb-btn" id="btn-export-project" data-tooltip="Export Project" style="width:22px;height:22px;">
+              <i class="fas fa-download" style="font-size:11px;"></i>
+            </button>
+            <button class="tb-btn" id="btn-import-project" data-tooltip="Import Project" style="width:22px;height:22px;">
+              <i class="fas fa-upload" style="font-size:11px;"></i>
+            </button>
+            <button class="tb-btn" id="btn-new-template" data-tooltip="New from Template" style="width:22px;height:22px;">
+              <i class="fas fa-layer-group" style="font-size:11px;"></i>
+            </button>
           </div>
+        </div>
+        <!-- File filter input (#1) -->
+        <div class="sidebar-filter-bar">
+          <input type="text" class="file-filter-input" id="file-filter-input" placeholder="Filter files..." autocomplete="off">
         </div>
         <div class="sidebar-content" id="navigator-content">
           <!-- Dynamic content injected by JS -->
         </div>
+        <!-- Project stats footer (#9) -->
+        <div class="sidebar-stats-footer" id="sidebar-stats-footer">
+          <!-- Stats injected by JS -->
+        </div>
       </div>
+
+      <!-- Resizer between sidebar-left and editor (#6) -->
+      <div class="panel-resizer vertical" id="resizer-left" data-target="sidebar-left"></div>
 
       <!-- Editor Area -->
       <div class="editor-area" id="editor-area">
         <div class="editor-tabs" id="editor-tabs">
           <!-- Tabs injected by JS -->
+        </div>
+        <div class="editor-tab-actions">
+          <button class="tb-btn" id="btn-split-editor" data-tooltip="Split Editor" style="width:24px;height:24px;">
+            <i class="fas fa-columns" style="font-size:11px;"></i>
+          </button>
+        </div>
+        <!-- File path breadcrumb (#3) -->
+        <div class="editor-breadcrumb" id="editor-breadcrumb">
+          <!-- Breadcrumb injected by JS -->
         </div>
         <div class="editor-container" id="editor-container">
           <!-- Welcome screen shown initially -->
@@ -150,8 +227,19 @@
           <div id="monaco-container" style="display:none; flex:1; position:relative;">
             <div id="monaco-editor" style="width:100%;height:100%;"></div>
           </div>
+          <!-- Split editor container (#10) -->
+          <div id="monaco-container-split" style="display:none; flex:1; position:relative; border-left:1px solid var(--border-primary);">
+            <div id="monaco-editor-split" style="width:100%;height:100%;"></div>
+          </div>
+          <!-- Minimap toggle button (#8) -->
+          <button class="minimap-toggle" id="btn-minimap-toggle" data-tooltip="Toggle Minimap">
+            <i class="fas fa-map"></i>
+          </button>
         </div>
       </div>
+
+      <!-- Resizer between editor and sidebar-right (#6) -->
+      <div class="panel-resizer vertical" id="resizer-right" data-target="sidebar-right"></div>
 
       <!-- Right Sidebar (Inspector) -->
       <div class="sidebar-right" id="sidebar-right">
@@ -163,19 +251,31 @@
         </div>
       </div>
 
+      <!-- Resizer between sidebar-right and AI panel (#6) -->
+      <div class="panel-resizer vertical" id="resizer-ai" data-target="ai-panel"></div>
+
       <!-- AI Panel -->
       <div class="ai-panel" id="ai-panel">
         <div class="ai-header">
           <div class="ai-header-title">
             <i class="fas fa-robot" style="color:var(--accent);"></i>
             <span id="ai-panel-title">AI Assistant</span>
-            <span class="ai-model-badge" id="ai-model-badge">GLM-4-Plus</span>
+            <span class="ai-model-badge ai-model-switcher" id="ai-model-badge" title="Switch model">GLM-4-Plus <i class="fas fa-chevron-down" style="font-size:8px;margin-left:2px;"></i></span>
           </div>
           <div style="display:flex;gap:2px;align-items:center;">
             <div class="agent-mode-toggle" style="display:flex;gap:2px;margin-right:4px;">
               <button class="agent-mode-btn active" id="mode-chat" onclick="app.setAIMode('chat')">💬 Chat</button>
               <button class="agent-mode-btn" id="mode-agent" onclick="app.setAIMode('agent')">🤖 Agent</button>
             </div>
+            <button class="tb-btn" id="ai-history" data-tooltip="Chat History" style="width:22px;height:22px;">
+              <i class="fas fa-history" style="font-size:10px;"></i>
+            </button>
+            <button class="tb-btn" id="ai-templates" data-tooltip="Prompt Templates" style="width:22px;height:22px;">
+              <i class="fas fa-bookmark" style="font-size:10px;"></i>
+            </button>
+            <button class="tb-btn" id="ai-export" data-tooltip="Export Chat" style="width:22px;height:22px;">
+              <i class="fas fa-download" style="font-size:10px;"></i>
+            </button>
             <button class="tb-btn" id="ai-clear" data-tooltip="Clear Chat" style="width:22px;height:22px;">
               <i class="fas fa-trash" style="font-size:10px;"></i>
             </button>
@@ -214,10 +314,21 @@
               <i class="fas fa-paper-plane"></i>
             </button>
           </div>
+          <div class="ai-panel-footer">
+            <div class="ai-temp-control" title="Temperature">
+              <i class="fas fa-thermometer-half" style="font-size:9px;color:var(--text-tertiary);"></i>
+              <input type="range" id="ai-temp-slider" min="0" max="1" step="0.1" value="0.7" class="ai-temp-range">
+              <span id="ai-temp-val" style="font-size:10px;color:var(--text-secondary);min-width:22px;">0.7</span>
+            </div>
+            <span class="ai-token-counter" id="ai-token-counter"><i class="fas fa-coins" style="font-size:9px;"></i> 0 tokens</span>
+          </div>
         </div>
       </div>
 
     </div>
+
+    <!-- Resizer for bottom panel (#6) -->
+    <div class="panel-resizer horizontal" id="resizer-bottom" data-target="panel-bottom"></div>
 
     <!-- ============ BOTTOM PANEL ============ -->
     <div class="panel-bottom" id="panel-bottom">
@@ -253,10 +364,16 @@
         <i class="fas fa-exclamation-triangle"></i> 0 warnings
       </span>
       <span class="statusbar-item" id="status-cursor">Ln 1, Col 1</span>
-      <span class="statusbar-item" id="status-language">Plain Text</span>
+      <span class="statusbar-item multicursor-indicator" id="status-multicursor" style="display:none;">
+        <i class="fas fa-i-cursor"></i> 2 cursors
+      </span>
+      <span class="statusbar-item" id="status-language" data-tooltip="Click to toggle Word Wrap">Plain Text</span>
       <span class="statusbar-item" id="status-encoding">UTF-8</span>
       <span class="statusbar-item" id="status-ai">
         <i class="fas fa-robot"></i> GLM Ready
+      </span>
+      <span class="statusbar-item" id="status-autosave" data-tooltip="Toggle Auto-Save">
+        <i class="fas fa-cloud-upload-alt"></i> <span id="autosave-text">Auto-Save: On</span>
       </span>
     </div>
 
@@ -348,6 +465,24 @@
 
   <!-- Toast Container -->
   <div class="toast-container" id="toast-container"></div>
+
+  <!-- Hidden file input for project import (#6) -->
+  <input type="file" id="import-file-input" accept=".json" style="display:none;">
+
+  <!-- Template selector modal (#4) -->
+  <div class="modal-overlay" id="template-overlay">
+    <div class="modal-dialog" style="min-width:460px;">
+      <div class="modal-header">
+        <i class="fas fa-layer-group"></i> New Project from Template
+      </div>
+      <div class="modal-body" id="template-body">
+        <!-- Template options injected by JS -->
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn" id="template-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Monaco Editor Loader -->
   <script>

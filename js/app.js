@@ -15,6 +15,7 @@ import { CommandPalette } from './ui/command-palette.js';
 import { SearchNavigator } from './navigator/search.js';
 import { SymbolNavigator } from './navigator/symbol-navigator.js';
 import { InterfaceBuilder } from './ui/interface-builder.js';
+import { DevTools } from './ui/dev-tools.js';
 import { GitUI } from './project/git.js';
 import { NotificationManager } from './utils/helpers.js';
 import { AgentPanel } from './ai/agent-panel.js';
@@ -44,6 +45,56 @@ class AIXcodeApp {
     this.currentNavigator = 'project';
     this.settings = this.loadSettings();
     this.isRunning = false;
+
+    /** UI/UX Polish state */
+    this.zenMode = false;             // #1 Zen mode
+    this.isSplitEditor = false;       // #10 Split editor
+    this.splitEditor = null;          // #10 Split Monaco instance
+    this.autoSaveEnabled = true;      // #9 Auto-save
+    this._autoSaveTimer = null;       // #9 Auto-save debounce timer
+
+    /** Project templates (#4) */
+    this.projectTemplates = [
+      {
+        id: 'swiftui-app',
+        name: 'SwiftUI App',
+        icon: '📱',
+        desc: 'A SwiftUI iOS app with ContentView and App entry point',
+        files: [
+          { path: '{name}/{name}App.swift', content: `import SwiftUI\n\n@main\nstruct {name}App: App {\n    var body: some Scene {\n        WindowGroup {\n            ContentView()\n        }\n    }\n}\n`, language: 'swift' },
+          { path: '{name}/ContentView.swift', content: `import SwiftUI\n\nstruct ContentView: View {\n    var body: some View {\n        VStack {\n            Image(systemName: "globe")\n                .imageScale(.large)\n                .foregroundStyle(.tint)\n            Text("Hello, world!")\n        }\n        .padding()\n    }\n}\n\n#Preview {\n    ContentView()\n}\n`, language: 'swift' },
+        ],
+      },
+      {
+        id: 'cli-tool',
+        name: 'Command Line Tool',
+        icon: '⌨️',
+        desc: 'A Swift command-line tool with main.swift',
+        files: [
+          { path: '{name}/main.swift', content: `import Foundation\n\nprint("Hello, World!")\n\n// Command-line arguments\nlet args = CommandLine.arguments\nprint("Arguments: \\(args)")\n`, language: 'swift' },
+          { path: '{name}/README.md', content: `# {name}\n\nA Swift command-line tool.\n\n## Usage\n\n\`\`\`\nswift run {name}\n\`\`\`\n`, language: 'markdown' },
+        ],
+      },
+      {
+        id: 'framework',
+        name: 'Framework',
+        icon: '📦',
+        desc: 'A Swift framework with public API module',
+        files: [
+          { path: '{name}/{name}.swift', content: `import Foundation\n\n/// Public API for {name} framework.\npublic struct {name} {\n    public static let version = "1.0.0"\n    \n    public init() {}\n    \n    public func greet(_ name: String) -> String {\n        return "Hello from {name}, \\(name)!"\n    }\n}\n`, language: 'swift' },
+          { path: '{name}/README.md', content: `# {name}\n\nA Swift framework.\n\n## Installation\n\nAdd as Swift Package dependency.\n`, language: 'markdown' },
+        ],
+      },
+      {
+        id: 'empty-project',
+        name: 'Empty Project',
+        icon: '📄',
+        desc: 'A blank project with a single starter file',
+        files: [
+          { path: '{name}/README.md', content: `# {name}\n\nA new project.\n`, language: 'markdown' },
+        ],
+      },
+    ];
   }
 
   async init() {
@@ -73,6 +124,8 @@ class AIXcodeApp {
     this.searchNav = new SearchNavigator(this);
     this.symbolNav = new SymbolNavigator(this);
     this.gitUI = new GitUI(this);
+    this.interfaceBuilder = new InterfaceBuilder(this);
+    this.devTools = new DevTools(this);
     this.agentPanel = new AgentPanel(this);
     this.agentPanel.init();
 
@@ -82,6 +135,7 @@ class AIXcodeApp {
     this.setupPanelTabs();
     this.setupKeyboardShortcuts();
     this.setupResizers();
+    this.setupUIPolish();      // UI/UX Polish features
     this.applySettings();
 
     // Render initial state
@@ -162,8 +216,55 @@ class AIXcodeApp {
     document.getElementById('btn-toggle-ai').addEventListener('click', () => this.togglePanel('ai-panel', 'btn-toggle-ai'));
     document.getElementById('btn-toggle-bottom').addEventListener('click', () => this.togglePanel('panel-bottom', 'btn-toggle-bottom'));
     document.getElementById('btn-settings').addEventListener('click', () => this.openSettings());
+
+    // ── Developer Tools dropdown ──
+    const toolsBtn = document.getElementById('btn-tools');
+    const toolsMenu = document.getElementById('tools-dropdown');
+    if (toolsBtn && toolsMenu) {
+      toolsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toolsMenu.style.display = toolsMenu.style.display === 'none' ? 'block' : 'none';
+      });
+      document.addEventListener('click', () => { toolsMenu.style.display = 'none'; });
+    }
     document.getElementById('btn-new-file').addEventListener('click', () => this.newFile());
     document.getElementById('btn-new-folder').addEventListener('click', () => this.newFolder());
+
+    // ── Export / Import / Template buttons (#4, #5, #6) ──
+    document.getElementById('btn-export-project')?.addEventListener('click', () => this.exportProject());
+    document.getElementById('btn-import-project')?.addEventListener('click', () => this.importProject());
+    document.getElementById('btn-new-template')?.addEventListener('click', () => this.openTemplateDialog());
+
+    // ── File filter input (#1) ──
+    const fileFilter = document.getElementById('file-filter-input');
+    if (fileFilter) {
+      fileFilter.addEventListener('input', (e) => {
+        if (this.fileTree) {
+          this.fileTree.filterFiles(e.target.value);
+        }
+      });
+    }
+
+    // ── Template modal cancel ──
+    document.getElementById('template-cancel')?.addEventListener('click', () => {
+      document.getElementById('template-overlay').classList.remove('visible');
+    });
+
+    // ── Import file input change ──
+    document.getElementById('import-file-input')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await this.vfs.importProject(text);
+        this.fileTree.render();
+        this.renderTabs();
+        this.notifications.toast(`Imported ${file.name}`, 'success');
+      } catch (err) {
+        this.notifications.toast(`Import failed: ${err.message}`, 'error');
+      }
+      e.target.value = '';
+    });
 
     // Search
     const search = document.getElementById('toolbar-search');
@@ -173,6 +274,46 @@ class AIXcodeApp {
         this.searchNav.search(search.value);
         search.value = '';
       }
+    });
+
+    // ── Editor Enhancement toolbar buttons (#1 Find/Replace, #5 Fold/Unfold) ──
+    document.getElementById('btn-find')?.addEventListener('click', () => {
+      this.triggerEditorAction('actions.find');
+    });
+    document.getElementById('btn-replace')?.addEventListener('click', () => {
+      this.triggerEditorAction('editor.action.startFindReplaceAction');
+    });
+    document.getElementById('btn-fold-all')?.addEventListener('click', () => {
+      this.editor?.foldAll?.();
+    });
+    document.getElementById('btn-unfold-all')?.addEventListener('click', () => {
+      this.editor?.unfoldAll?.();
+    });
+
+    // Status bar: click language label to toggle word wrap (#8)
+    document.getElementById('status-language')?.addEventListener('click', () => {
+      this.toggleWordWrap();
+    });
+
+    // ── UI/UX Polish: Zen mode, shortcuts, minimap toggle (#1, #2, #8) ──
+    document.getElementById('btn-zen-mode')?.addEventListener('click', () => this.toggleZenMode());
+    document.getElementById('btn-shortcuts')?.addEventListener('click', () => this.showShortcutsHelp());
+    document.getElementById('btn-minimap-toggle')?.addEventListener('click', () => this.toggleMinimap());
+    document.getElementById('btn-split-editor')?.addEventListener('click', () => this.toggleSplitEditor());
+
+    // ── #3 Status bar click → jump to errors / go to line ──
+    document.getElementById('status-errors')?.addEventListener('click', () => {
+      this.showNavigator('issue');
+    });
+    document.getElementById('status-cursor')?.addEventListener('click', () => {
+      this.triggerEditorAction('editor.action.gotoLine');
+    });
+
+    // ── #9 Auto-save toggle ──
+    document.getElementById('status-autosave')?.addEventListener('click', () => {
+      this.autoSaveEnabled = !this.autoSaveEnabled;
+      this.updateAutoSaveIndicator();
+      this.notifications.toast(`Auto-save: ${this.autoSaveEnabled ? 'On' : 'Off'}`, 'info', 1200);
     });
   }
 
@@ -377,6 +518,14 @@ class AIXcodeApp {
     // Update inspector
     this.inspector.updateFile(path);
     this.updateStatusLanguage(file.language);
+
+    // ── Track recent files (#2) ──
+    if (this.fileTree) {
+      this.fileTree.addRecentFile(path);
+    }
+
+    // ── Update breadcrumb (#3) ──
+    this.updateBreadcrumb(path);
   }
 
   closeFile(path) {
@@ -391,6 +540,8 @@ class AIXcodeApp {
         this.activeFile = null;
         document.getElementById('welcome-screen').style.display = 'flex';
         document.getElementById('monaco-container').style.display = 'none';
+        // Clear breadcrumb when no file is open (#3)
+        this.updateBreadcrumb(null);
       }
     }
     this.renderTabs();
@@ -438,6 +589,7 @@ class AIXcodeApp {
     this.isRunning = true;
     document.getElementById('btn-run').disabled = true;
     document.getElementById('btn-stop').disabled = false;
+    this.showLoadingIndicator?.('Building...');
     this.buildSystem.build();
   }
 
@@ -445,6 +597,7 @@ class AIXcodeApp {
     this.isRunning = false;
     document.getElementById('btn-run').disabled = false;
     document.getElementById('btn-stop').disabled = true;
+    this.hideLoadingIndicator?.();
     this.buildSystem.stop();
     this.notifications.toast('Build stopped.', 'warning');
   }
@@ -496,7 +649,10 @@ class AIXcodeApp {
 
     // AI model badge
     const badge = document.getElementById('ai-model-badge');
-    if (badge) badge.textContent = this.settings.model.replace('-', '-').toUpperCase();
+    if (badge) {
+      const label = this.settings.model.toUpperCase();
+      badge.innerHTML = `${label} <i class="fas fa-chevron-down" style="font-size:8px;margin-left:2px;"></i>`;
+    }
 
     // GLM client
     if (this.glm) {
@@ -591,6 +747,48 @@ class AIXcodeApp {
       if (meta && e.key === 'w') {
         e.preventDefault();
         if (this.activeFile) this.closeFile(this.activeFile);
+      }
+
+      // ── Editor Enhancements ──
+
+      // Find (Ctrl+F) — Monaco handles natively when editor is focused;
+      // this also works when focus is elsewhere (toolbar, sidebar, etc.).
+      if (meta && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        this.triggerEditorAction('actions.find');
+      }
+      // Replace (Ctrl+H)
+      if (meta && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        this.triggerEditorAction('editor.action.startFindReplaceAction');
+      }
+      // Go to Line (Ctrl+G)
+      if (meta && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        this.triggerEditorAction('editor.action.gotoLine');
+      }
+      // Zoom in (Ctrl+=)
+      if (meta && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        this.editorZoom(1);
+      }
+      // Zoom out (Ctrl+-)
+      if (meta && e.key === '-') {
+        e.preventDefault();
+        this.editorZoom(-1);
+      }
+
+      // ── UI/UX Polish: F11 Zen mode (#1) ──
+      if (e.key === 'F11') {
+        e.preventDefault();
+        this.toggleZenMode();
+      }
+
+      // ── UI/UX Polish: ? shortcut help overlay (#2) ──
+      // Only trigger when not typing in an input/textarea and Shift+/ is pressed
+      if (e.shiftKey && e.key === '?' && !this._isTypingInInput(e)) {
+        e.preventDefault();
+        this.showShortcutsHelp();
       }
     });
 
@@ -697,10 +895,84 @@ class AIXcodeApp {
     });
   }
 
-  // ====== Resizers ======
+  // ====== Resizers (#6) ======
   setupResizers() {
-    // Panel resizing could be added here with drag handlers
-    // For now, panels are fixed width
+    const resizers = document.querySelectorAll('.panel-resizer');
+    resizers.forEach(resizer => {
+      resizer.addEventListener('mousedown', (e) => this._startResize(e, resizer));
+    });
+    // Restore saved widths/heights from localStorage
+    this._restorePanelSizes();
+  }
+
+  _startResize(e, resizer) {
+    e.preventDefault();
+    const targetId = resizer.dataset.target;
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    const isVertical = resizer.classList.contains('vertical');
+    const startPos = isVertical ? e.clientX : e.clientY;
+    const startSize = isVertical ? target.offsetWidth : target.offsetHeight;
+
+    resizer.classList.add('dragging');
+    document.body.style.cursor = isVertical ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev) => {
+      const currentPos = isVertical ? ev.clientX : ev.clientY;
+      const delta = currentPos - startPos;
+
+      // Determine direction (left panels shrink left-to-right, right panels grow right-to-left)
+      let newSize;
+      if (targetId === 'sidebar-left') {
+        newSize = Math.max(140, Math.min(500, startSize + delta));
+        target.style.width = newSize + 'px';
+      } else if (targetId === 'sidebar-right' || targetId === 'ai-panel') {
+        newSize = Math.max(160, Math.min(600, startSize - delta));
+        target.style.width = newSize + 'px';
+      } else if (targetId === 'panel-bottom') {
+        newSize = Math.max(60, Math.min(600, startSize - delta));
+        target.style.height = newSize + 'px';
+      }
+    };
+
+    const onUp = () => {
+      resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+
+      // Persist sizes
+      this._savePanelSize(targetId, target);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  _savePanelSize(targetId, target) {
+    const sizes = JSON.parse(localStorage.getItem('ai-xcode-panel-sizes') || '{}');
+    if (targetId === 'panel-bottom') {
+      sizes[targetId] = target.offsetHeight;
+    } else {
+      sizes[targetId] = target.offsetWidth;
+    }
+    localStorage.setItem('ai-xcode-panel-sizes', JSON.stringify(sizes));
+  }
+
+  _restorePanelSizes() {
+    const sizes = JSON.parse(localStorage.getItem('ai-xcode-panel-sizes') || '{}');
+    for (const [id, size] of Object.entries(sizes)) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (id === 'panel-bottom') {
+        el.style.height = size + 'px';
+      } else {
+        el.style.width = size + 'px';
+      }
+    }
   }
 
   // ====== VFS Change Handler ======
@@ -717,6 +989,467 @@ class AIXcodeApp {
 
   updateStatusCursor(line, col) {
     document.getElementById('status-cursor').textContent = `Ln ${line}, Col ${col}`;
+  }
+
+  /**
+   * Check if the current focus is in an input/textarea.
+   * Used to prevent shortcut-trigger from firing while typing.
+   */
+  _isTypingInInput(e) {
+    const tag = document.activeElement?.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA';
+  }
+
+  /**
+   * Update the multi-cursor count indicator in the status bar (#3).
+   * Shows the indicator only when more than one cursor is active.
+   */
+  updateStatusMultiCursor(count) {
+    const el = document.getElementById('status-multicursor');
+    if (!el) return;
+    if (count > 1) {
+      el.style.display = 'flex';
+      el.textContent = `${count} cursors`;
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  /**
+   * Trigger a Monaco editor action by its action id.
+   * Used by keyboard shortcuts (#1, #2) and toolbar buttons.
+   */
+  triggerEditorAction(actionId) {
+    if (this.editor?.monaco) {
+      const action = this.editor.monaco.getAction(actionId);
+      if (action) {
+        action.run();
+        this.editor.monaco.focus();
+      }
+    }
+  }
+
+  /**
+   * Zoom the editor font size up (+1) or down (-1).  Clamped to [8, 32].
+   * Triggered by Ctrl+= / Ctrl+- (#4).
+   */
+  editorZoom(direction) {
+    const newSize = Math.max(8, Math.min(32, (this.settings.fontSize || 14) + direction));
+    this.settings.fontSize = newSize;
+    if (this.editor?.monaco) {
+      this.editor.monaco.updateOptions({ fontSize: newSize });
+    }
+    this.notifications.toast(`Font size: ${newSize}px`, 'info', 1000);
+  }
+
+  /**
+   * Toggle editor word wrap. Called from the status bar language click (#8).
+   */
+  toggleWordWrap() {
+    this.settings.wordWrap = !this.settings.wordWrap;
+    if (this.editor?.monaco) {
+      this.editor.monaco.updateOptions({
+        wordWrap: this.settings.wordWrap ? 'on' : 'off',
+      });
+    }
+    this.notifications.toast(
+      `Word wrap: ${this.settings.wordWrap ? 'On' : 'Off'}`,
+      'info', 1000,
+    );
+  }
+
+  // ====== Feature Methods (#3–#6) ======
+
+  /**
+   * Update the file path breadcrumb below editor tabs (#3).
+   * @param {string} path  Full file path (e.g. "MyApp/Views/LoginView.swift").
+   */
+  updateBreadcrumb(path) {
+    const container = document.getElementById('editor-breadcrumb');
+    if (!container) return;
+
+    if (!path) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const segments = path.split('/');
+    container.innerHTML = '';
+
+    segments.forEach((seg, i) => {
+      if (i > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'breadcrumb-sep';
+        sep.textContent = '›';
+        container.appendChild(sep);
+      }
+      const item = document.createElement('span');
+      item.className = 'breadcrumb-item';
+      if (i === segments.length - 1) item.classList.add('active');
+      item.textContent = seg;
+
+      // Clicking a segment opens the folder/file at that path
+      const partialPath = segments.slice(0, i + 1).join('/');
+      item.addEventListener('click', () => {
+        if (i === segments.length - 1) {
+          this.openFile(partialPath);
+        } else {
+          // Try to open as folder (expand in tree)
+          if (this.fileTree) {
+            this.fileTree.expandedFolders.add(partialPath);
+            this.fileTree.render();
+          }
+        }
+      });
+      container.appendChild(item);
+    });
+  }
+
+  /**
+   * Export the current project as a downloadable JSON file (#5).
+   */
+  async exportProject() {
+    try {
+      const data = await this.vfs.exportProject();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-xcode-project-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this.notifications.toast(`Exported ${data.files.length} files`, 'success');
+    } catch (err) {
+      this.notifications.toast(`Export failed: ${err.message}`, 'error');
+    }
+  }
+
+  /**
+   * Import a project from a JSON file (#6).
+   * Triggers the hidden file input dialog.
+   */
+  importProject() {
+    const input = document.getElementById('import-file-input');
+    if (input) {
+      input.click();
+    }
+  }
+
+  /**
+   * Open the project template selection dialog (#4).
+   */
+  openTemplateDialog() {
+    const body = document.getElementById('template-body');
+    if (!body) return;
+    body.innerHTML = this.projectTemplates.map(t => `
+      <div class="template-card" data-template="${t.id}">
+        <span class="template-icon">${t.icon}</span>
+        <div class="template-info">
+          <div class="template-name">${t.name}</div>
+          <div class="template-desc">${t.desc}</div>
+        </div>
+      </div>
+    `).join('');
+
+    body.querySelectorAll('.template-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const tmpl = this.projectTemplates.find(t => t.id === card.dataset.template);
+        if (tmpl) this.newFromTemplate(tmpl);
+      });
+    });
+
+    document.getElementById('template-overlay').classList.add('visible');
+  }
+
+  /**
+   * Create a new project from a template (#4).
+   * @param {object} template  Template object from this.projectTemplates.
+   */
+  async newFromTemplate(template) {
+    const name = prompt('Enter project name:', template.name.replace(/\s+/g, ''));
+    if (!name) return;
+
+    document.getElementById('template-overlay').classList.remove('visible');
+
+    try {
+      for (const f of template.files) {
+        const path = f.path.replace(/\{name\}/g, name);
+        const content = f.content.replace(/\{name\}/g, name);
+        await this.vfs.createFile(path, content, f.language || this.vfs.getFileLanguage(path));
+      }
+      this.fileTree.render();
+      // Open the first file
+      const firstPath = template.files[0].path.replace(/\{name\}/g, name);
+      this.openFile(firstPath);
+      this.notifications.toast(`Created "${name}" from ${template.name}`, 'success');
+    } catch (err) {
+      this.notifications.toast(`Template creation failed: ${err.message}`, 'error');
+    }
+  }
+
+  // ====== UI/UX POLISH FEATURES (#1–#10) ======
+
+  /**
+   * Set up all UI/UX polish features that need DOM/event wiring.
+   * Called from init().
+   */
+  setupUIPolish() {
+    // #4 Loading indicator — init hidden, set up AI streaming watcher
+    this._initLoadingIndicator();
+
+    // #5 Animated tabs — handled purely by CSS, no JS needed
+
+    // #8 Minimap toggle — reflect current setting
+    const minimapBtn = document.getElementById('btn-minimap-toggle');
+    if (minimapBtn && this.settings.minimap) {
+      minimapBtn.classList.add('active');
+    }
+
+    // #9 Auto-save — wire up editor content change for auto-save
+    this._initAutoSave();
+
+    // #2 Shortcuts overlay — click outside to close
+    document.addEventListener('click', (e) => {
+      const overlay = document.getElementById('shortcuts-overlay');
+      if (overlay && e.target === overlay) {
+        overlay.classList.remove('visible');
+      }
+    });
+  }
+
+  // ── #1 Zen Mode ──────────────────────────────────────────────────
+
+  /**
+   * Toggle fullscreen "Zen mode" — hides all panels (sidebar, inspector,
+   * AI, bottom) and expands the editor.  Press F11 again to restore.
+   */
+  toggleZenMode() {
+    this.zenMode = !this.zenMode;
+    document.body.classList.toggle('zen-mode', this.zenMode);
+    this.notifications.toast(
+      this.zenMode ? 'Zen mode enabled — press F11 to exit' : 'Zen mode disabled',
+      'info', 1500,
+    );
+    // Refresh editor layout after CSS transition
+    setTimeout(() => {
+      if (this.editor?.monaco) this.editor.monaco.layout();
+    }, 250);
+  }
+
+  // ── #2 Keyboard Shortcut Help Overlay ────────────────────────────
+
+  /**
+   * Show a modal listing all keyboard shortcuts.
+   */
+  showShortcutsHelp() {
+    // Remove any existing overlay first
+    document.getElementById('shortcuts-overlay')?.remove();
+
+    const shortcuts = [
+      ['Run', '⌘R'],
+      ['Stop', '⌘.'],
+      ['Save', '⌘S'],
+      ['New File', '⌘N'],
+      ['Close Tab', '⌘W'],
+      ['Command Palette', '⌘⇧P'],
+      ['Global Search', '⌘⇧F'],
+      ['Find', '⌘F'],
+      ['Replace', '⌘H'],
+      ['Go to Line', '⌘G'],
+      ['Settings', '⌘,'],
+      ['Toggle Navigator', '⌘0'],
+      ['Toggle Inspector', '⌃⌘0'],
+      ['Toggle AI Panel', '⌃⌘A'],
+      ['Toggle Debug Area', '⌘⇧Y'],
+      ['Toggle Word Wrap', 'Click language label'],
+      ['Zoom In', '⌘='],
+      ['Zoom Out', '⌘-'],
+      ['Zen Mode', 'F11'],
+      ['Shortcuts Help', '?'],
+      ['Format Document', '⌘⇧F (in palette)'],
+      ['Ask AI', '⌘I'],
+      ['Toggle Minimap', 'Click map button'],
+    ];
+
+    const rows = shortcuts.map(([desc, key]) =>
+      `<div class="shortcut-row"><span class="shortcut-desc">${desc}</span><span class="shortcut-key">${key}</span></div>`
+    ).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'shortcuts-overlay';
+    overlay.className = 'shortcuts-overlay';
+    overlay.innerHTML = `
+      <div class="shortcuts-dialog">
+        <div class="modal-header">
+          <i class="fas fa-keyboard"></i> Keyboard Shortcuts
+        </div>
+        <div class="shortcuts-body">${rows}</div>
+        <div class="modal-footer">
+          <button class="modal-btn primary" onclick="document.getElementById('shortcuts-overlay').classList.remove('visible')">Got it</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    // Trigger CSS transition
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+    // Esc to close
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') overlay.classList.remove('visible');
+    });
+  }
+
+  // ── #4 Loading Indicator ─────────────────────────────────────────
+
+  _initLoadingIndicator() {
+    this.showLoading = (text = 'Working...') => {
+      const indicator = document.getElementById('loading-indicator');
+      const txt = document.getElementById('loading-text');
+      if (indicator) indicator.classList.add('visible');
+      if (txt) txt.textContent = text;
+    };
+    this.hideLoading = () => {
+      const indicator = document.getElementById('loading-indicator');
+      if (indicator) indicator.classList.remove('visible');
+    };
+  }
+
+  /**
+   * Show the loading spinner in the toolbar (e.g. during AI streaming or build).
+   * @param {string} [text]  Optional text label.
+   */
+  showLoadingIndicator(text) {
+    this.showLoading?.(text);
+  }
+
+  /**
+   * Hide the loading spinner.
+   */
+  hideLoadingIndicator() {
+    this.hideLoading?.();
+  }
+
+  // ── #8 Minimap Toggle ────────────────────────────────────────────
+
+  /**
+   * Toggle the Monaco minimap on/off.
+   */
+  toggleMinimap() {
+    this.settings.minimap = !this.settings.minimap;
+    if (this.editor?.monaco) {
+      this.editor.monaco.updateOptions({
+        minimap: { enabled: this.settings.minimap },
+      });
+    }
+    const btn = document.getElementById('btn-minimap-toggle');
+    if (btn) btn.classList.toggle('active', this.settings.minimap);
+    this.notifications.toast(`Minimap: ${this.settings.minimap ? 'On' : 'Off'}`, 'info', 1000);
+  }
+
+  // ── #9 Auto-Save ─────────────────────────────────────────────────
+
+  _initAutoSave() {
+    // Hook into editor content changes to trigger auto-save
+    if (this.editor?.monaco) {
+      this.editor.monaco.onDidChangeModelContent(() => {
+        this._scheduleAutoSave();
+      });
+    }
+  }
+
+  /**
+   * Schedule an auto-save after 2 seconds of no edits.
+   */
+  _scheduleAutoSave() {
+    if (!this.autoSaveEnabled || !this.activeFile) return;
+    clearTimeout(this._autoSaveTimer);
+    this.updateAutoSaveIndicator('saving');
+    this._autoSaveTimer = setTimeout(() => {
+      if (this.activeFile && this.editor) {
+        this.editor.save(this.activeFile);
+        this.updateAutoSaveIndicator('saved');
+        // Reset to idle after 1.5s
+        setTimeout(() => this.updateAutoSaveIndicator('idle'), 1500);
+      }
+    }, 2000);
+  }
+
+  /**
+   * Update the auto-save status bar indicator.
+   * @param {'idle'|'saving'|'saved'} state
+   */
+  updateAutoSaveIndicator(state) {
+    const el = document.getElementById('status-autosave');
+    const txt = document.getElementById('autosave-text');
+    if (!el || !txt) return;
+    el.classList.remove('saving', 'saved');
+    if (state === 'saving') {
+      el.classList.add('saving');
+      txt.textContent = 'Saving...';
+    } else if (state === 'saved') {
+      el.classList.add('saved');
+      txt.textContent = 'Saved ✓';
+    } else {
+      txt.textContent = `Auto-Save: ${this.autoSaveEnabled ? 'On' : 'Off'}`;
+    }
+  }
+
+  // ── #10 Split Editor ─────────────────────────────────────────────
+
+  /**
+   * Toggle split editor view — creates a second Monaco instance
+   * side-by-side with the primary editor, showing the same model.
+   */
+  toggleSplitEditor() {
+    this.isSplitEditor = !this.isSplitEditor;
+    const container = document.getElementById('editor-container');
+    const splitContainer = document.getElementById('monaco-container-split');
+
+    if (this.isSplitEditor) {
+      // Create split editor
+      const splitDom = document.getElementById('monaco-editor-split');
+      if (!splitDom) return;
+
+      const settings = this.app?.settings ?? this.settings ?? {};
+      this.splitEditor = monaco.editor.create(splitDom, {
+        theme: settings.theme === 'light' ? 'xcode-light' : 'xcode-dark',
+        automaticLayout: true,
+        fontSize: settings.fontSize ?? 14,
+        fontFamily: "'SF Mono', 'JetBrains Mono', monospace",
+        readOnly: true, // Read-only mirror
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        lineNumbers: 'on',
+        renderWhitespace: 'selection',
+      });
+
+      // Share the same model
+      const model = this.editor?.monaco?.getModel();
+      if (model) this.splitEditor.setModel(model);
+
+      container.classList.add('split');
+      document.body.classList.add('editor-split-active');
+      splitContainer.style.display = 'flex';
+      this.notifications.toast('Split editor enabled', 'info', 1200);
+    } else {
+      // Close split editor
+      if (this.splitEditor) {
+        this.splitEditor.dispose();
+        this.splitEditor = null;
+      }
+      container.classList.remove('split');
+      document.body.classList.remove('editor-split-active');
+      splitContainer.style.display = 'none';
+      this.notifications.toast('Split editor disabled', 'info', 1200);
+    }
+
+    // Layout both editors
+    setTimeout(() => {
+      if (this.editor?.monaco) this.editor.monaco.layout();
+      if (this.splitEditor) this.splitEditor.layout();
+    }, 100);
   }
 
   // ====== Logging ======

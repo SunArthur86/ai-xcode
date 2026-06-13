@@ -220,11 +220,24 @@ export class EditorManager {
       smoothScrollingDuration: 100,
       fixedOverflowWidgets: true,
       linkedEditing: true,
+
+      // ── Editor Enhancement Options ──
+      matchBrackets: 'always',           // #6 bracket matching highlight
+      selectionHighlight: true,          // #7 selection highlight
+      dragAndDrop: true,                 // #9 drag & drop text
+      stickyScroll: { enabled: true },   // #10 sticky scroll
     });
 
     // Cursor position → status bar
     this.monaco.onDidChangeCursorPosition((e) => {
       this.app?.updateStatusCursor?.(e.position.lineNumber, e.position.column);
+    });
+
+    // Multi-cursor count → status indicator (#3)
+    this.monaco.onDidChangeCursorSelection(() => {
+      const selections = this.monaco.getSelections();
+      const count = selections ? selections.length : 1;
+      this.app?.updateStatusMultiCursor?.(count);
     });
 
     // Context-menu: "Ask AI"
@@ -283,18 +296,28 @@ export class EditorManager {
       this.gotoLine(line);
     }
 
+    // Sync split editor if active (#10)
+    if (this.app?.splitEditor) {
+      this.app.splitEditor.setModel(model);
+    }
+
     // Focus editor
     this.monaco.focus();
   }
 
   /**
    * Called when a model's content changes — updates tab modified state.
+   * Also triggers auto-save scheduling in the app.
    * @private
    */
   _onContentChanged(path) {
     // Re-render tabs so the "modified" dot appears/disappears
     if (this.app?.renderTabs) {
       this.app.renderTabs();
+    }
+    // Trigger auto-save scheduling (#9)
+    if (this.app?._scheduleAutoSave) {
+      this.app._scheduleAutoSave();
     }
   }
 
@@ -516,6 +539,24 @@ export class EditorManager {
     this.monaco.focus();
   }
 
+  // ─── 12b. foldAll / unfoldAll (#5) ───────────────────────────────────────
+
+  /**
+   * Fold all foldable regions in the editor.
+   */
+  foldAll() {
+    this.monaco?.getAction('editor.foldAll')?.run();
+    this.monaco?.focus();
+  }
+
+  /**
+   * Unfold all folded regions in the editor.
+   */
+  unfoldAll() {
+    this.monaco?.getAction('editor.unfoldAll')?.run();
+    this.monaco?.focus();
+  }
+
   // ─── 13. setupInlineCompletion ───────────────────────────────────────────
 
   /**
@@ -720,13 +761,27 @@ export class EditorManager {
   // ─── Context Menu: "Ask AI" ──────────────────────────────────────────────
 
   /**
-   * Register a "Ask AI" entry in Monaco's right-click context menu.
-   * When clicked, the currently selected code is sent to the AI chat panel.
+   * Register custom context-menu entries in Monaco's right-click menu:
+   * - "Format Code"
+   * - "Ask AI"  (sends selection/document to the AI chat panel)
+   * - "Duplicate Line"  (#7)
+   * - "Sort Lines"  (#7)
+   *
    * @private
    */
   _setupContextMenu() {
     if (!this.monaco) return;
 
+    // "Format Code" in context menu
+    this.monaco.addAction({
+      id: 'editor-context-format-code',
+      label: '🎨 Format Code',
+      contextMenuGroupId: 'modification',
+      contextMenuOrder: 1,
+      run: () => this.formatDocument(),
+    });
+
+    // "Ask AI" in context menu
     this.monaco.addAction({
       id: 'editor-context-ask-ai',
       label: '✨ Ask AI',
@@ -735,6 +790,84 @@ export class EditorManager {
       contextMenuOrder: 1,
       run: () => this._askAI(),
     });
+
+    // "Duplicate Line" — duplicates the current line (or each selected line)
+    this.monaco.addAction({
+      id: 'editor-context-duplicate-line',
+      label: '📑 Duplicate Line',
+      contextMenuGroupId: 'modification',
+      contextMenuOrder: 2,
+      run: () => this._duplicateLine(),
+    });
+
+    // "Sort Lines" — sorts selected lines alphabetically
+    this.monaco.addAction({
+      id: 'editor-context-sort-lines',
+      label: '🔤 Sort Lines',
+      contextMenuGroupId: 'modification',
+      contextMenuOrder: 3,
+      run: () => this._sortLines(),
+    });
+  }
+
+  /**
+   * Duplicate the current line (or each line in the selection).
+   * @private
+   */
+  _duplicateLine() {
+    if (!this.monaco) return;
+    this.monaco.getAction('editor.action.copyLinesDownAction')?.run();
+    this.monaco.focus();
+  }
+
+  /**
+   * Sort the selected lines alphabetically (ascending).
+   * If no selection, operates on all lines in the document.
+   * @private
+   */
+  _sortLines() {
+    if (!this.monaco) return;
+    const editor = this.monaco;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selection = editor.getSelection();
+    let startLine, endLine;
+
+    if (selection && !selection.isEmpty()) {
+      startLine = selection.startLineNumber;
+      endLine = selection.endLineNumber;
+      // If the selection ends at column 1 of the last line, exclude that line
+      if (selection.endColumn === 1 && endLine > startLine) {
+        endLine--;
+      }
+    } else {
+      startLine = 1;
+      endLine = model.getLineCount();
+    }
+
+    // Extract lines
+    const lines = [];
+    for (let i = startLine; i <= endLine; i++) {
+      lines.push(model.getLineContent(i));
+    }
+
+    // Sort (case-insensitive, trim for comparison)
+    lines.sort((a, b) => {
+      const ta = a.trim().toLowerCase();
+      const tb = b.trim().toLowerCase();
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+
+    // Replace range with sorted lines
+    const range = new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine));
+    editor.executeEdits('sort-lines', [{
+      range,
+      text: lines.join('\n'),
+      forceMoveMarkers: true,
+    }]);
+    editor.setSelection(new monaco.Range(startLine, 1, startLine + lines.length - 1, 1));
+    editor.focus();
   }
 
   /**

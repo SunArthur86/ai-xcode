@@ -74,6 +74,30 @@ const ACTION_METHODS = {
 };
 
 /**
+ * Common prompt templates for the Templates dropdown (Feature 7).
+ * @type {Array<{icon: string, label: string, prompt: string}>}
+ */
+const PROMPT_TEMPLATES = [
+  { icon: '📖', label: 'Explain this code', prompt: 'Please explain what this code does, step by step, including its purpose, key components, and any important design decisions.' },
+  { icon: '🧪', label: 'Write unit tests', prompt: 'Write comprehensive unit tests for this code. Cover happy paths, edge cases, and error handling. Use an appropriate testing framework.' },
+  { icon: '🛡️', label: 'Add error handling', prompt: 'Add robust error handling to this code. Include try/catch blocks, input validation, and meaningful error messages.' },
+  { icon: '⚡', label: 'Optimize performance', prompt: 'Analyze this code for performance bottlenecks and provide an optimized version. Explain what was improved and why.' },
+  { icon: '📝', label: 'Add documentation', prompt: 'Add thorough documentation to this code. Include JSDoc comments, inline explanations, and a summary of the overall structure.' },
+  { icon: '🔧', label: 'Fix all issues', prompt: 'Review this code for bugs, security issues, code style problems, and best practice violations. Fix all issues you find and explain each fix.' },
+];
+
+/**
+ * Available models for the model switcher (Feature 6).
+ * @type {Array<{value: string, label: string}>}
+ */
+const AVAILABLE_MODELS = [
+  { value: 'glm-4-plus', label: 'GLM-4-Plus (Best Quality)' },
+  { value: 'glm-4', label: 'GLM-4 (Standard)' },
+  { value: 'glm-4-flash', label: 'GLM-4-Flash (Fastest)' },
+  { value: 'glm-4-long', label: 'GLM-4-Long (Long Context)' },
+];
+
+/**
  * File-extension → short language identifier, used when building code context
  * for the model and when labelling code blocks. Falls back to a generic
  * `text` for unknown extensions.
@@ -185,7 +209,83 @@ export class AIChat {
       this.addMessage('assistant', WELCOME_MARKDOWN, true);
     }
     this._updateSendButton();
+    this._initEnhancements();
     console.log('[AIChat] initialised.');
+  }
+
+  /**
+   * Initialise all AI enhancement features: code copy delegation,
+   * temperature slider, model switcher, history, templates, export,
+   * and token counter.
+   * @private
+   */
+  _initEnhancements() {
+    // ── Feature 3: Code block copy via event delegation ──────────────
+    const messagesEl = document.getElementById('ai-messages');
+    if (messagesEl) {
+      messagesEl.addEventListener('click', (e) => {
+        const copyBtn = e.target.closest('.ai-code-copy');
+        if (!copyBtn) return;
+        const block = copyBtn.closest('.ai-code-block');
+        const codeEl = block?.querySelector('pre code, pre');
+        const code = codeEl?.textContent || '';
+        navigator.clipboard?.writeText(code).then(() => {
+          copyBtn.classList.add('copied');
+          copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied';
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+          }, 1500);
+          this.app?.notifications?.toast?.('Copied to clipboard.', 'info', 1200);
+        }).catch(() => {});
+      });
+    }
+
+    // ── Feature 5: Temperature slider ────────────────────────────────
+    const tempSlider = document.getElementById('ai-temp-slider');
+    const tempVal = document.getElementById('ai-temp-val');
+    if (tempSlider) {
+      const initTemp = this._temperature();
+      tempSlider.value = initTemp;
+      if (tempVal) tempVal.textContent = initTemp.toFixed(1);
+      tempSlider.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (tempVal) tempVal.textContent = v.toFixed(1);
+        if (this.app.settings) {
+          this.app.settings.temperature = v;
+          this.app.saveSettings({ temperature: v });
+        }
+      });
+    }
+
+    // ── Feature 9: Token counter initial display ─────────────────────
+    this.updateTokenCounter();
+
+    // ── Feature 1: History button ────────────────────────────────────
+    document.getElementById('ai-history')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleDropdown('history', e.currentTarget);
+    });
+
+    // ── Feature 7: Templates button ──────────────────────────────────
+    document.getElementById('ai-templates')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleDropdown('templates', e.currentTarget);
+    });
+
+    // ── Feature 10: Export button ────────────────────────────────────
+    document.getElementById('ai-export')?.addEventListener('click', () => {
+      this.exportConversation();
+    });
+
+    // ── Feature 6: Model switcher ────────────────────────────────────
+    document.getElementById('ai-model-badge')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleDropdown('model', e.currentTarget);
+    });
+
+    // Close dropdowns when clicking elsewhere.
+    document.addEventListener('click', () => this._closeDropdowns());
   }
 
   // ─── 1. send ──────────────────────────────────────────────────────────
@@ -428,6 +528,8 @@ export class AIChat {
           content: finalText,
           timestamp: Date.now(),
         });
+        this._addRegenerateButton(bubble);
+        this._addApplyChangesButton(bubble, finalText);
         this._finishStream();
       },
       // ── onError ────────────────────────────────────────────────────
@@ -810,6 +912,8 @@ export class AIChat {
     this.isStreaming = false;
     this.abortController = null;
     this._updateSendButton();
+    this.updateTokenCounter();
+    this._saveConversationToHistory();
   }
 
   /**
@@ -1078,6 +1182,544 @@ export class AIChat {
         });
       });
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // AI Enhancement Features (1–10)
+  // ─────────────────────────────────────────────────────────────────────
+
+  // ─── Feature 1: Conversation History ───────────────────────────────
+
+  /**
+   * Persist the current conversation to localStorage.
+   * Conversations are capped at 50 entries.
+   * @private
+   */
+  _saveConversationToHistory() {
+    if (!this.messages || this.messages.length < 2) return;
+    try {
+      const key = 'ai-xcode-ai-history';
+      let history = JSON.parse(localStorage.getItem(key) || '[]');
+      // Remove the welcome message from the snapshot.
+      const conv = this.messages.filter(
+        (m) => !m.content?.includes?.('Welcome to **AI-Xcode**'),
+      );
+      if (conv.length < 2) return;
+      const firstUser = conv.find((m) => m.role === 'user');
+      const preview = (firstUser?.content || 'Conversation')
+        .replace(/[*`#]/g, '')
+        .substring(0, 50);
+      const entry = {
+        id: Date.now(),
+        preview: preview + (firstUser?.content?.length > 50 ? '…' : ''),
+        timestamp: Date.now(),
+        messages: conv.map((m) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+      };
+      // Replace if same preview already exists, otherwise prepend.
+      history = history.filter((h) => h.preview !== entry.preview);
+      history.unshift(entry);
+      if (history.length > 50) history = history.slice(0, 50);
+      localStorage.setItem(key, JSON.stringify(history));
+    } catch (e) {
+      console.warn('[AIChat] Failed to save history:', e);
+    }
+  }
+
+  /**
+   * Restore a previously saved conversation by index.
+   * @param {number} index  Index in the history array.
+   */
+  restoreConversation(index) {
+    try {
+      const history = JSON.parse(
+        localStorage.getItem('ai-xcode-ai-history') || '[]',
+      );
+      const entry = history[index];
+      if (!entry) return;
+      if (this.isStreaming) this.stop();
+      this.messages = (entry.messages || []).map((m) => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp || Date.now(),
+      }));
+      const container = document.getElementById('ai-messages');
+      if (container) {
+        container.innerHTML = '';
+        if (this.messages.length === 0) {
+          this.addMessage('assistant', WELCOME_MARKDOWN, true);
+        } else {
+          for (const m of this.messages) {
+            this.addMessage(m.role, m.content);
+          }
+        }
+      }
+      this.app?.notifications?.toast?.('Conversation restored.', 'info', 1500);
+    } catch (e) {
+      console.warn('[AIChat] Failed to restore conversation:', e);
+    }
+  }
+
+  // ─── Feature 4: Regeneration ────────────────────────────────────────
+
+  /**
+   * Add a small "Regenerate" refresh button below the last assistant
+   * message bubble.
+   * @param {HTMLElement} bubble  The assistant message bubble element.
+   * @private
+   */
+  _addRegenerateButton(bubble) {
+    if (!bubble) return;
+    // Remove any existing regenerate button.
+    bubble.parentElement?.querySelector('.ai-regenerate-btn')?.remove();
+    const btn = document.createElement('button');
+    btn.className = 'ai-regenerate-btn';
+    btn.innerHTML = '<i class="fas fa-redo-alt"></i> Regenerate';
+    btn.addEventListener('click', () => this.regenerate());
+    bubble.parentElement.appendChild(btn);
+  }
+
+  /**
+   * Regenerate the last assistant response by re-sending the last user
+   * message. Removes the current assistant answer first.
+   */
+  async regenerate() {
+    if (this.isStreaming) return;
+    // Find the last user message in history.
+    let lastUserIdx = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return;
+
+    const lastUserText = this.messages[lastUserIdx].content;
+    // Truncate history up to (but not including) the last user message,
+    // then remove everything after it (the old assistant reply).
+    this.messages = this.messages.slice(0, lastUserIdx);
+
+    // Re-render the message list.
+    const container = document.getElementById('ai-messages');
+    if (container) {
+      container.innerHTML = '';
+      if (this.messages.length === 0) {
+        this.addMessage('assistant', WELCOME_MARKDOWN, true);
+      }
+      for (const m of this.messages) {
+        this.addMessage(m.role, m.content);
+      }
+    }
+
+    // Re-send the same question.
+    this.addMessage('user', lastUserText);
+    const apiMessages = this._buildApiMessages(lastUserText);
+    await this.streamResponse(apiMessages);
+  }
+
+  // ─── Feature 8: Diff Preview & Apply Changes ────────────────────────
+
+  /**
+   * Check if the assistant response contains code that could modify an
+   * existing file. If so, add an "Apply Changes" button that opens a diff
+   * preview dialog.
+   * @param {HTMLElement} bubble  The assistant message bubble.
+   * @param {string} text        The full assistant response text.
+   * @private
+   */
+  _addApplyChangesButton(bubble, text) {
+    if (!bubble || !text) return;
+    // Only show if there's an active file and the response contains a code block.
+    if (!this.app.activeFile) return;
+    const hasCodeBlock = /```[\s\S]*?```/.test(text);
+    if (!hasCodeBlock) return;
+
+    // Extract the first/largest code block.
+    const blocks = text.match(/```(\w*)\n?([\s\S]*?)```/g);
+    if (!blocks || blocks.length === 0) return;
+
+    // Find the largest code block (likely the full file replacement).
+    let bestCode = '';
+    let bestLang = '';
+    for (const block of blocks) {
+      const m = block.match(/```(\w*)\n?([\s\S]*?)```/);
+      if (m && m[2].length > bestCode.length) {
+        bestCode = m[2];
+        bestLang = m[1] || '';
+      }
+    }
+    if (bestCode.length < 20) return;
+
+    const contentEl = bubble.querySelector('.ai-msg-content') || bubble;
+    const btnId = 'ai-apply-changes-' + Date.now();
+    const btn = document.createElement('button');
+    btn.className = 'ai-apply-btn';
+    btn.id = btnId;
+    btn.innerHTML = '<i class="fas fa-file-import"></i> Apply Changes';
+    btn.style.marginLeft = '8px';
+    contentEl.appendChild(btn);
+    btn.addEventListener('click', () => {
+      const fileNode = this.app.vfs?._cache?.get(this.app.activeFile);
+      const oldContent = fileNode?.content || this._getFileContent() || '';
+      this.showDiffPreview(oldContent, bestCode, bestLang, () => {
+        this._applyCodeToEditor(bestCode);
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-check"></i> Applied';
+      });
+    });
+  }
+
+  /**
+   * Show a modal diff preview comparing old and new code side-by-side.
+   * @param {string} oldCode
+   * @param {string} newCode
+   * @param {string} language
+   * @param {() => void} onApply  Callback when user clicks "Apply".
+   */
+  showDiffPreview(oldCode, newCode, language = '', onApply) {
+    // Remove any existing diff dialog.
+    document.getElementById('ai-diff-overlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'ai-diff-overlay';
+    overlay.id = 'ai-diff-overlay';
+
+    // Build simple line-by-line diff.
+    const oldLines = oldCode.split('\n');
+    const newLines = newCode.split('\n');
+    const maxLines = Math.max(oldLines.length, newLines.length);
+    let diffHtml = '';
+    for (let i = 0; i < maxLines; i++) {
+      const o = oldLines[i];
+      const n = newLines[i];
+      if (o === n) {
+        diffHtml += `<div class="ai-diff-line unchanged"><span class="diff-num">${i + 1}</span><span class="diff-content">${escapeHtml(o || '')}</span></div>`;
+      } else {
+        if (o !== undefined) {
+          diffHtml += `<div class="ai-diff-line removed"><span class="diff-num">${i + 1}</span><span class="diff-content">- ${escapeHtml(o)}</span></div>`;
+        }
+        if (n !== undefined) {
+          diffHtml += `<div class="ai-diff-line added"><span class="diff-num">${i + 1}</span><span class="diff-content">+ ${escapeHtml(n)}</span></div>`;
+        }
+      }
+    }
+
+    overlay.innerHTML = `
+      <div class="ai-diff-dialog">
+        <div class="modal-header">
+          <i class="fas fa-code-branch" style="color:var(--accent);"></i>
+          Apply Changes — <span style="font-family:var(--mono-font);font-size:12px;">${escapeHtml(this.app.activeFile || 'file')}</span>
+        </div>
+        <div class="ai-diff-content">${diffHtml}</div>
+        <div class="modal-footer">
+          <button class="modal-btn" id="ai-diff-cancel">Cancel</button>
+          <button class="modal-btn primary" id="ai-diff-apply">
+            <i class="fas fa-check"></i> Apply Changes
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    overlay.querySelector('#ai-diff-cancel').addEventListener('click', () => {
+      overlay.classList.remove('visible');
+      setTimeout(() => overlay.remove(), 200);
+    });
+    overlay.querySelector('#ai-diff-apply').addEventListener('click', () => {
+      overlay.classList.remove('visible');
+      setTimeout(() => overlay.remove(), 200);
+      if (typeof onApply === 'function') onApply();
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove('visible');
+        setTimeout(() => overlay.remove(), 200);
+      }
+    });
+  }
+
+  /**
+   * Apply new code to the editor (replaces selection or whole file).
+   * @param {string} code
+   * @private
+   */
+  _applyCodeToEditor(code) {
+    const editor = this.app.editor;
+    if (!editor) return;
+    const hasSelection = Boolean(editor.getSelection?.());
+    if (hasSelection) {
+      editor.replaceSelection?.(code);
+    } else if (this.app.activeFile) {
+      const model = editor.models?.get(this.app.activeFile);
+      if (model) model.setValue(code);
+    }
+    this.app?.notifications?.toast?.('Changes applied to editor.', 'success', 2000);
+  }
+
+  // ─── Feature 9: Token Counter ──────────────────────────────────────
+
+  /**
+   * Update the token usage counter in the AI panel footer.
+   */
+  updateTokenCounter() {
+    const el = document.getElementById('ai-token-counter');
+    if (!el) return;
+    const tokens = this.app.glm?.totalTokensUsed ?? 0;
+    el.innerHTML = `<i class="fas fa-coins" style="font-size:9px;"></i> ${tokens.toLocaleString()} tokens`;
+  }
+
+  // ─── Feature 10: Conversation Export ────────────────────────────────
+
+  /**
+   * Export the current conversation as a Markdown file. Creates a .md file
+   * in the VFS and shows a toast notification.
+   */
+  exportConversation() {
+    if (!this.messages || this.messages.length === 0) {
+      this.app?.notifications?.toast?.('No conversation to export.', 'warning', 1500);
+      return;
+    }
+
+    const lines = [
+      '# AI-Xcode Conversation Export',
+      '',
+      `**Exported:** ${new Date().toLocaleString()}`,
+      `**Model:** ${this.app.glm?.model || 'unknown'}`,
+      '',
+      '---',
+      '',
+    ];
+
+    for (const msg of this.messages) {
+      // Skip welcome message.
+      if (msg.content?.includes?.('Welcome to **AI-Xcode**')) continue;
+      const role = msg.role === 'user' ? '👤 **User**' : '🤖 **Assistant**';
+      lines.push(`### ${role}`);
+      lines.push('');
+      lines.push(msg.content || '');
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    }
+
+    const md = lines.join('\n');
+    const fileName = `chat-export-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}.md`;
+    const filePath = `MyApp/Exports/${fileName}`;
+
+    try {
+      if (this.app.vfs) {
+        // Ensure Exports folder exists.
+        if (!this.app.vfs._cache.has('MyApp/Exports')) {
+          this.app.vfs.createFolder?.('MyApp/Exports');
+        }
+        this.app.vfs.createFile?.(filePath, md, 'markdown');
+        this.app?.notifications?.toast?.(
+          `Conversation exported to ${filePath}`, 'success', 3000,
+        );
+      }
+    } catch (e) {
+      // Fallback: trigger a browser download.
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.app?.notifications?.toast?.(
+        'Conversation downloaded as Markdown.', 'success', 2000,
+      );
+    }
+  }
+
+  // ─── Feature 6 & 7: Dropdown Management ────────────────────────────
+
+  /**
+   * Toggle a dropdown menu (history, templates, or model) anchored to a
+   * button element. Clicking the same button again closes it.
+   * @param {'history'|'templates'|'model'} type
+   * @param {HTMLElement} anchor  The button that triggered the dropdown.
+   * @private
+   */
+  _toggleDropdown(type, anchor) {
+    // If a dropdown of this type is already open, close it.
+    const existing = document.getElementById('ai-enhancement-dropdown');
+    if (existing && existing.dataset.type === type) {
+      existing.remove();
+      return;
+    }
+    existing?.remove();
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'ai-dropdown';
+    dropdown.id = 'ai-enhancement-dropdown';
+    dropdown.dataset.type = type;
+
+    // Position relative to anchor.
+    const rect = anchor.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = `${rect.bottom + 4}px`;
+    dropdown.style.right = `${window.innerWidth - rect.right}px`;
+    dropdown.style.left = 'auto';
+
+    if (type === 'history') {
+      dropdown.innerHTML = this._buildHistoryHTML();
+      dropdown.querySelectorAll('[data-restore]').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.restoreConversation(parseInt(item.dataset.restore, 10));
+          this._closeDropdowns();
+        });
+      });
+      const clearBtn = dropdown.querySelector('[data-clear-history]');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          localStorage.removeItem('ai-xcode-ai-history');
+          this._closeDropdowns();
+          this.app?.notifications?.toast?.('History cleared.', 'info', 1200);
+        });
+      }
+    } else if (type === 'templates') {
+      dropdown.innerHTML = this._buildTemplatesHTML();
+      dropdown.querySelectorAll('[data-template]').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.insertTemplate(item.dataset.template);
+          this._closeDropdowns();
+        });
+      });
+    } else if (type === 'model') {
+      dropdown.innerHTML = this._buildModelHTML();
+      dropdown.querySelectorAll('[data-model]').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.switchModel(item.dataset.model);
+          this._closeDropdowns();
+        });
+      });
+    }
+
+    document.body.appendChild(dropdown);
+    // Prevent clicks inside from closing.
+    dropdown.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  /**
+   * Build the history dropdown HTML.
+   * @returns {string}
+   * @private
+   */
+  _buildHistoryHTML() {
+    let history = [];
+    try {
+      history = JSON.parse(localStorage.getItem('ai-xcode-ai-history') || '[]');
+    } catch (_) { /* ignore */ }
+
+    if (history.length === 0) {
+      return '<div class="ai-dropdown-empty">No saved conversations yet.<br>Conversations are saved automatically.</div>';
+    }
+
+    const items = history.map((h, i) => {
+      const time = new Date(h.timestamp).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+      return `
+        <div class="ai-dropdown-item" data-restore="${i}">
+          <span class="item-icon">💬</span>
+          <span class="item-text">${escapeHtml(h.preview || 'Conversation')}</span>
+          <span class="item-meta">${time}</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="ai-dropdown-header">Chat History (${history.length})</div>
+      ${items}
+      <div class="ai-dropdown-divider"></div>
+      <div class="ai-dropdown-item" data-clear-history style="color:var(--error);">
+        <span class="item-icon">🗑️</span>
+        <span class="item-text">Clear All History</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Build the templates dropdown HTML.
+   * @returns {string}
+   * @private
+   */
+  _buildTemplatesHTML() {
+    const items = PROMPT_TEMPLATES.map((t) => `
+      <div class="ai-dropdown-item" data-template="${escapeHtml(t.prompt)}">
+        <span class="item-icon">${t.icon}</span>
+        <span class="item-text">${escapeHtml(t.label)}</span>
+      </div>`).join('');
+    return `<div class="ai-dropdown-header">Prompt Templates</div>${items}`;
+  }
+
+  /**
+   * Build the model switcher dropdown HTML.
+   * @returns {string}
+   * @private
+   */
+  _buildModelHTML() {
+    const current = this.app.glm?.model || this.app.settings?.model || 'glm-4-plus';
+    const items = AVAILABLE_MODELS.map((m) => {
+      const isActive = m.value === current;
+      return `
+        <div class="ai-dropdown-item" data-model="${m.value}" ${isActive ? 'style="background:var(--accent-bg);"' : ''}>
+          <span class="item-icon">${isActive ? '✓' : ''}</span>
+          <span class="item-text">${escapeHtml(m.label)}</span>
+        </div>`;
+    }).join('');
+    return `<div class="ai-dropdown-header">Switch Model</div>${items}`;
+  }
+
+  /**
+   * Close any open AI enhancement dropdowns.
+   * @private
+   */
+  _closeDropdowns() {
+    document.getElementById('ai-enhancement-dropdown')?.remove();
+  }
+
+  /**
+   * Insert a template prompt into the AI input and focus it.
+   * @param {string} prompt
+   */
+  insertTemplate(prompt) {
+    const input = document.getElementById('ai-input');
+    if (!input) return;
+    input.value = prompt;
+    input.focus();
+    // Place cursor at end.
+    input.selectionStart = input.selectionEnd = input.value.length;
+    // Trigger auto-resize.
+    input.dispatchEvent(new Event('input'));
+    this.app?.notifications?.toast?.('Template inserted.', 'info', 1000);
+  }
+
+  /**
+   * Switch the active GLM model.
+   * @param {string} model  Model identifier (e.g. 'glm-4-plus').
+   */
+  switchModel(model) {
+    if (!model) return;
+    this.app.saveSettings({ model });
+    // Update badge text.
+    const badge = document.getElementById('ai-model-badge');
+    if (badge) {
+      const label = model.toUpperCase().replace(/-/g, '-');
+      badge.innerHTML = `${label} <i class="fas fa-chevron-down" style="font-size:8px;margin-left:2px;"></i>`;
+    }
+    this.app?.notifications?.toast?.(
+      `Model switched to ${model}.`, 'success', 1500,
+    );
   }
 }
 
