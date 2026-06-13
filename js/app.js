@@ -17,6 +17,7 @@ import { SymbolNavigator } from './navigator/symbol-navigator.js';
 import { InterfaceBuilder } from './ui/interface-builder.js';
 import { GitUI } from './project/git.js';
 import { NotificationManager } from './utils/helpers.js';
+import { AgentPanel } from './ai/agent-panel.js';
 
 class AIXcodeApp {
   constructor() {
@@ -33,7 +34,10 @@ class AIXcodeApp {
     this.symbolNav = null;
     this.interfaceBuilder = null;
     this.gitUI = null;
+    this.agentPanel = null;
+    this.aiMode = 'chat'; // 'chat' | 'agent'
     this.notifications = new NotificationManager();
+    this.pastedImage = null; // Base64 data URL of a pasted image, sent with next message
 
     this.activeFile = null;
     this.openTabs = [];
@@ -69,6 +73,8 @@ class AIXcodeApp {
     this.searchNav = new SearchNavigator(this);
     this.symbolNav = new SymbolNavigator(this);
     this.gitUI = new GitUI(this);
+    this.agentPanel = new AgentPanel(this);
+    this.agentPanel.init();
 
     // Setup UI bindings
     this.setupToolbar();
@@ -515,6 +521,24 @@ class AIXcodeApp {
     document.getElementById('settings-overlay').classList.add('visible');
   }
 
+  // ====== AI Mode Toggle ======
+  setAIMode(mode) {
+    this.aiMode = mode;
+    document.getElementById('mode-chat').classList.toggle('active', mode === 'chat');
+    document.getElementById('mode-agent').classList.toggle('active', mode === 'agent');
+    const title = document.getElementById('ai-panel-title');
+    const input = document.getElementById('ai-input');
+    
+    if (mode === 'agent') {
+      title.textContent = 'AI Agent';
+      input.placeholder = 'Describe a task — Agent will autonomously read/write files... (Enter to run)';
+      this.agentPanel._resetPanel();
+    } else {
+      title.textContent = 'AI Assistant';
+      input.placeholder = 'Ask AI anything... (Enter to send, Shift+Enter for newline)';
+    }
+  }
+
   // ====== Keyboard Shortcuts ======
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
@@ -608,9 +632,21 @@ class AIXcodeApp {
     // AI input handler
     const aiInput = document.getElementById('ai-input');
     aiInput.addEventListener('keydown', (e) => {
+      // Command history navigation (ArrowUp/ArrowDown).
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        this.aiChat.handleKeydown(e);
+        // If handleKeydown consumed the event (preventDefault was called),
+        // stop further processing.
+        if (e.defaultPrevented) return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        this.aiChat.send();
+        if (this.aiMode === 'agent') {
+          this.agentPanel.runTask(document.getElementById('ai-input').value);
+          document.getElementById('ai-input').value = '';
+        } else {
+          this.aiChat.send();
+        }
       }
     });
     // Auto-resize textarea
@@ -619,7 +655,40 @@ class AIXcodeApp {
       aiInput.style.height = Math.min(120, aiInput.scrollHeight) + 'px';
     });
 
-    document.getElementById('ai-send').addEventListener('click', () => this.aiChat.send());
+    // Image paste support — captures pasted images and stores them for the next send.
+    aiInput.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            this.pastedImage = ev.target.result; // base64 data URL
+            this.notifications.toast('Image pasted — will be sent with next message', 'info');
+            // Show preview
+            const preview = document.createElement('div');
+            preview.id = 'pasted-image-preview';
+            preview.style.cssText = 'padding:4px;border-radius:4px;';
+            preview.innerHTML = '<span style="font-size:11px;color:var(--accent);">📎 Image attached</span>';
+            // Remove any existing preview first.
+            document.getElementById('pasted-image-preview')?.remove();
+            document.querySelector('.ai-input-area')?.insertBefore(preview, document.querySelector('.ai-input-wrapper'));
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    });
+
+    document.getElementById('ai-send').addEventListener('click', () => {
+      if (this.aiMode === 'agent') {
+        const input = document.getElementById('ai-input');
+        this.agentPanel.runTask(input.value);
+        input.value = '';
+      } else {
+        this.aiChat.send();
+      }
+    });
     document.getElementById('ai-clear').addEventListener('click', () => this.aiChat.clear());
 
     // Quick action buttons

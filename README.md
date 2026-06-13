@@ -1,208 +1,122 @@
 # 🧑‍💻 AI-Xcode — GLM-Powered IDE
 
-> A fully-featured web-based IDE inspired by Apple Xcode, with deep GLM AI integration for code generation, completion, explanation, debugging, and refactoring.
+> A fully-featured web-based IDE inspired by Apple Xcode, with deep GLM AI integration **and a Codex-style Agent Loop** for autonomous code modification.
 
-![AI-Xcode IDE](https://img.shields.io/badge/AI--Xcode-v1.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![GLM](https://img.shields.io/badge/AI-GLM--4--Plus-orange) ![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success)
+![Version](https://img.shields.io/badge/AI--Xcode-v2.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![GLM](https://img.shields.io/badge/AI-GLM--4--Plus-orange) ![Agent](https://img.shields.io/badge/Agent-Loop-red)
 
-## ✨ Features
+## 🆕 v2.0 — Codex-Inspired Agent Mode
+
+Based on reverse-engineering [OpenAI Codex CLI](https://github.com/openai/codex) (90K★), we added:
+
+| Feature | Inspired By | Description |
+|---------|-------------|-------------|
+| 🤖 **Agent Loop** | Codex Agent Loop | AI autonomously iterates: reason → call tool → execute → repeat |
+| 🧠 **Reasoning Chain** | Codex reasoning_content | Shows AI's thinking process in collapsible purple blocks |
+| 📦 **Context Compaction** | Codex /compact | Auto-summarizes when context exceeds threshold |
+| 🔧 **Tool Call Visualization** | Codex tool steps | Each tool call shown with icon, args, result, status |
+| ✏️ **File Patching** | Codex patch_file | Surgical find-and-replace (not full overwrite) |
+| 🔒 **Approval Modes** | Codex approval config | manual / suggest / auto modes for destructive ops |
+| 📋 **AGENTS.md** | Codex AGENTS.md | Hierarchical project config loaded into system prompt |
+| 🎚 **Reasoning Effort** | Codex effort levels | low / medium / high thinking depth |
+| 📊 **Token Tracking** | Codex usage tracking | Real-time token/request/iteration counters |
+| 📜 **Command History** | Shell ↑↓ | ArrowUp/Down to recall previous AI messages |
+| 🖼 **Image Paste** | Codex multimodal | Paste images into AI chat for visual context |
+
+## ✨ Full Feature List
 
 ### Xcode Feature Parity
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| 📝 **Source Editor** | ✅ | Monaco Editor with syntax highlighting, minimap, multi-tab editing |
-| 📁 **Project Navigator** | ✅ | Full file tree with create/rename/delete/duplicate |
-| 🔍 **Symbol Navigator** | ✅ | AST-based class/function/variable tree (12+ languages) |
-| 🔎 **Search Navigator** | ✅ | Global find & replace with regex, case-sensitive, whole word |
-| ⚠️ **Issue Navigator** | ✅ | Build errors + AI-detected issues |
-| 🧪 **Test Navigator** | ✅ | Test runner with pass/fail indicators |
-| 🐛 **Debug Navigator** | ✅ | Breakpoints, call stack, variable inspector |
-| 🔴 **Breakpoint Navigator** | ✅ | Breakpoint management with enable/disable |
-| 📐 **Interface Builder** | ✅ | Canvas-based drag-and-drop UI designer with SwiftUI/UIKit export |
-| 📋 **Inspector Panel** | ✅ | File attributes, quick help, identity, attributes |
-| 🔧 **Build System** | ✅ | Simulated build pipeline with console output |
-| 🖥 **Terminal** | ✅ | Integrated pseudo-terminal with command execution |
-| 🎨 **Git Integration** | ✅ | Branch status, diff viewer, commit dialog |
-| 🎯 **Command Palette** | ✅ | Cmd+Shift+P fuzzy command search |
-| 🌗 **Themes** | ✅ | Dark (Xcode default) + Light |
+- 📝 Monaco Editor (syntax highlighting, minimap, multi-tab)
+- 📁 Project Navigator (file tree with CRUD)
+- 🔍 Symbol Navigator (12+ languages)
+- 🔎 Search Navigator (regex, replace)
+- ⚠️ Issue Navigator
+- 🧪 Test Navigator
+- 🐛 Debug Navigator (breakpoints, call stack, variables)
+- 📐 Interface Builder (drag-drop UI designer, SwiftUI/UIKit export)
+- 📋 Inspector Panel (attributes, quick help, identity)
+- 🔧 Build System (simulated pipeline)
+- 🖥 Terminal (pseudo-terminal)
+- 🎨 Git Integration (diff, commit)
+- 🎯 Command Palette (Cmd+Shift+P)
+- 🌗 Dark/Light themes
 
 ### AI Features (GLM-Powered)
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| 💬 **AI Chat** | ✅ | Streaming chat with GLM-4-Plus, context-aware |
-| ✨ **Inline Completion** | ✅ | Ghost-text code suggestions via GLM-4-Flash |
-| 📖 **Explain Code** | ✅ | AI-powered code explanation |
-| 🐛 **Find Bugs** | ✅ | AI bug detection with fix suggestions |
-| ♻️ **Refactor** | ✅ | AI refactoring with apply button |
-| 🧪 **Generate Tests** | ✅ | AI test case generation |
-| 📝 **Generate Docs** | ✅ | AI documentation generation |
-| 🔍 **Code Review** | ✅ | AI code review with scoring |
-| 🤖 **AI UI Generation** | ✅ | Describe UI → AI generates Interface Builder layout |
+- 💬 AI Chat (streaming, context-aware)
+- 🤖 Agent Mode (autonomous tool-calling loop)
+- ✨ Inline Completion (ghost text)
+- 📖 Explain / 🐛 Find Bugs / ♻️ Refactor
+- 🧪 Generate Tests / 📝 Generate Docs / 🔍 Code Review
+- 🤖 AI UI Generation (describe → Interface Builder layout)
 
 ## 🚀 Quick Start
 
-### Option 1: Direct Open
 ```bash
-# Clone the repo
 git clone https://github.com/SunArthur86/ai-xcode.git
-cd ai-xcode
-
-# Open in browser (any modern browser)
-open index.html  # macOS
-xdg-open index.html  # Linux
-```
-
-### Option 2: Local Server (Recommended)
-```bash
 cd ai-xcode
 python3 -m http.server 8099
 # Open http://localhost:8099
 ```
 
-### Configure GLM API
-1. Click the **Settings** button (⚙️) in the toolbar
-2. Enter your GLM API Key from [open.bigmodel.cn](https://open.bigmodel.cn)
-3. Select your preferred model (GLM-4-Plus recommended)
-4. Click **Save**
+Click **⚙️ Settings** → enter GLM API Key → Save.
 
 ## 🎮 Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
+| `⌘⇧P` | Command Palette |
+| `⌘R` | Run / Build |
 | `⌘N` | New File |
 | `⌘S` | Save |
-| `⌘W` | Close Tab |
-| `⌘R` | Run / Build |
-| `⌘.` | Stop |
 | `⌘,` | Settings |
 | `⌘0` | Toggle Navigator |
-| `⌃⌘0` | Toggle Inspector |
 | `⌃⌘A` | Toggle AI Panel |
-| `⌘⇧Y` | Toggle Debug Area |
-| `⌘⇧P` | Command Palette |
-| `⌘⇧F` | Global Search |
-| `⌘1-8` | Switch Navigators |
+| `↑↓` (in AI input) | Command History |
 
-## 🏗 Architecture
+## 🏗 Architecture (18 modules, 12K+ lines)
 
 ```
 ai-xcode/
-├── index.html                 # Main entry point
-├── css/
-│   └── main.css               # 500+ lines, Apple Design Language
+├── index.html
+├── css/main.css                 # Apple Design Language themes
 ├── js/
-│   ├── app.js                 # Main application controller
-│   ├── editor/
-│   │   └── editor-manager.js  # Monaco Editor wrapper (852 lines)
-│   ├── navigator/
-│   │   ├── file-tree.js       # Project navigator (file tree)
-│   │   ├── symbol-navigator.js # Symbol navigator (12+ languages)
-│   │   └── search.js          # Search navigator with replace
+│   ├── app.js                   # Main controller (740 lines)
 │   ├── ai/
-│   │   ├── api.js             # GLM API client (929 lines)
-│   │   └── chat.js            # AI chat panel with streaming
-│   ├── builder/
-│   │   └── build-system.js    # Build pipeline simulation
-│   ├── debugger/
-│   │   └── debugger.js        # Debug UI (breakpoints, variables)
-│   ├── ui/
-│   │   ├── inspector-panel.js # Right sidebar inspector
-│   │   ├── command-palette.js # Cmd+Shift+P palette
-│   │   └── interface-builder.js # Visual UI designer
-│   ├── project/
-│   │   ├── file-system.js     # IndexedDB virtual file system
-│   │   └── git.js             # Git UI simulation
-│   └── utils/
-│       └── helpers.js         # NotificationManager + utilities
-├── assets/
-├── docs/
-│   └── plans/
-└── README.md
+│   │   ├── api.js               # GLM API client (929 lines)
+│   │   ├── chat.js              # AI chat with streaming (1084 lines)
+│   │   ├── agent-loop.js  🆕    # Codex-style agent loop (653 lines)
+│   │   └── agent-panel.js 🆕    # Agent UI: reasoning, tools, diffs (395 lines)
+│   ├── editor/editor-manager.js # Monaco wrapper (851 lines)
+│   ├── navigator/               # Project/Symbol/Search navigators
+│   ├── builder/build-system.js  # Build pipeline simulation
+│   ├── debugger/debugger.js     # Debug UI
+│   ├── ui/                      # Inspector, Command Palette, Interface Builder
+│   ├── project/                 # VFS (IndexedDB), Git UI
+│   └── utils/helpers.js         # Notifications + utilities
+└── docs/plans/
+    ├── implementation-plan.md
+    └── codex-comparison.md      # Codex vs AI-Xcode analysis
 ```
 
-### Tech Stack
+## 📊 Codex CLI vs AI-Xcode Comparison
 
-- **Vanilla ES6+ Modules** — Zero framework dependencies
-- **Monaco Editor** (CDN) — VS Code's editor engine
-- **GLM-4-Plus API** — Zhipu AI for all AI features
-- **IndexedDB** — Project persistence (survives page reload)
-- **Font Awesome** (CDN) — Icon system
-- **CSS Custom Properties** — Theming system
-
-## 📸 Screenshots
-
-### Main IDE View
-- Dark theme Xcode-style layout
-- File tree (left) + Editor (center) + Inspector (right) + AI Chat (far right)
-- Bottom panel with Console / Build / Debug / Terminal tabs
-
-### AI Chat
-- Streaming responses from GLM-4-Plus
-- Quick actions: Explain, Find Bugs, Refactor, Tests, Review, Docs
-- Context-aware (includes active file's code context)
-
-### Interface Builder
-- 17 component types (Button, Label, TextField, Switch, Slider, etc.)
-- Drag-and-drop from component library
-- Property inspector with live editing
-- Export to SwiftUI or UIKit code
-- AI UI generation (describe → generate layout)
-
-## 🔧 Configuration
-
-### GLM Models Supported
-
-| Model | Use Case | Speed |
-|-------|----------|-------|
-| `glm-4-plus` | Best quality, complex tasks | Medium |
-| `glm-4` | Standard tasks | Fast |
-| `glm-4-flash` | Code completion, quick tasks | Fastest |
-| `glm-4-long` | Long context (>8K tokens) | Medium |
-
-### Editor Settings
-- Font size, tab size, word wrap, minimap toggle
-- Theme: Dark (default) or Light
-- Auto-completion toggle
-
-## 🧩 File Structure
-
-The IDE ships with a sample Swift project (`MyApp`):
-```
-MyApp/
-├── AppDelegate.swift       # App lifecycle
-├── ContentView.swift       # Root SwiftUI view
-├── Models/
-│   └── User.swift          # User model
-├── Views/
-│   ├── LoginView.swift     # Login screen
-│   └── DashboardView.swift # Dashboard
-├── Tests/
-│   └── MyAppTests.swift    # Unit tests
-├── Assets/
-│   └── AppIcon             # App icon placeholder
-├── Info.plist              # App configuration
-└── README.md               # Project docs
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+| Feature | Codex CLI | AI-Xcode v2.0 |
+|---------|-----------|---------------|
+| Agent Loop | ✅ Core | ✅ 8 tools, 25 iterations max |
+| Reasoning Display | ✅ | ✅ Collapsible blocks |
+| Context Compaction | ✅ Auto | ✅ Auto-summarize |
+| Tool Visualization | ✅ | ✅ Timeline with status |
+| File Patching | ✅ | ✅ Surgical patch_file |
+| Approval Modes | ✅ | ✅ manual/suggest/auto |
+| AGENTS.md | ✅ Hierarchical | ✅ Loaded into prompt |
+| Reasoning Effort | ✅ | ✅ low/medium/high |
+| Token Tracking | ✅ | ✅ Stats API |
+| MCP Support | ✅ | 🚧 Planned |
+| Sandbox | ✅ Network isolation | N/A (browser sandbox) |
+| IDE Features | ❌ CLI only | ✅ Full Xcode-like IDE |
 
 ## 📄 License
 
-MIT License — feel free to use this project for any purpose.
-
-## 🙏 Acknowledgments
-
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) by Microsoft
-- [GLM / Zhipu AI](https://open.bigmodel.cn) for AI capabilities
-- Design inspired by Apple Xcode
-- Font Awesome for icons
+MIT License
 
 ---
 

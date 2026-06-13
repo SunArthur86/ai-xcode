@@ -153,6 +153,14 @@ export class AIChat {
      */
     this.messages = [];
 
+    /**
+     * Command history for ArrowUp/Down cycling (like a shell).
+     * @type {string[]}
+     */
+    this.history = [];
+    /** Current position when cycling through {@link history} (-1 = not browsing). */
+    this.historyIndex = -1;
+
     /** True while an AI response is actively streaming. */
     this.isStreaming = false;
 
@@ -226,6 +234,13 @@ export class AIChat {
     // No text and no selection but a file is open → bail (avoid empty send).
     if (!text) return;
 
+    // Push to command history (max 50 entries, no consecutive duplicates).
+    if (text && this.history[this.history.length - 1] !== text) {
+      this.history.push(text);
+      if (this.history.length > 50) this.history.shift();
+    }
+    this.historyIndex = -1;
+
     // Regular send — optionally annotate with file context.
     this.addMessage('user', text);
     this._resetInput();
@@ -234,6 +249,65 @@ export class AIChat {
     const apiMessages = this._buildApiMessages(text);
 
     await this.streamResponse(apiMessages);
+  }
+
+  // ─── 1b. handleKeydown (command history) ─────────────────────────────
+
+  /**
+   * Process keydown events on the AI input for command-history navigation.
+   *
+   * - **ArrowUp**: cycle backward through previous messages (oldest first →
+   *   newest last). Clamps at the oldest entry.
+   * - **ArrowDown**: cycle forward. When past the newest entry the input is
+   *   cleared back to an empty state.
+   *
+   * The original draft (if any unsaved text existed) is preserved so pressing
+   * ArrowDown past the end restores it.
+   *
+   * @param {KeyboardEvent} e
+   */
+  handleKeydown(e) {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (this.history.length === 0) return;
+
+    const input = document.getElementById('ai-input');
+    if (!input) return;
+
+    // Save the user's current draft the first time they press Up.
+    if (this.historyIndex === -1) {
+      this._draft = input.value;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      // If not yet browsing, start at the most recent entry.
+      if (this.historyIndex === -1) {
+        this.historyIndex = this.history.length - 1;
+      } else if (this.historyIndex > 0) {
+        this.historyIndex--;
+      }
+      input.value = this.history[this.historyIndex];
+      // Move cursor to end for natural editing.
+      requestAnimationFrame(() => {
+        input.selectionStart = input.selectionEnd = input.value.length;
+      });
+    } else {
+      // ArrowDown
+      if (this.historyIndex === -1) return; // already at "current draft"
+      e.preventDefault();
+      this.historyIndex++;
+      if (this.historyIndex >= this.history.length) {
+        // Past the newest entry → restore the draft (or empty).
+        this.historyIndex = -1;
+        input.value = this._draft || '';
+        this._draft = null;
+      } else {
+        input.value = this.history[this.historyIndex];
+      }
+      requestAnimationFrame(() => {
+        input.selectionStart = input.selectionEnd = input.value.length;
+      });
+    }
   }
 
   // ─── 2. sendWithContext ───────────────────────────────────────────────

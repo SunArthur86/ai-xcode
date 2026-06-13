@@ -168,10 +168,14 @@
         <div class="ai-header">
           <div class="ai-header-title">
             <i class="fas fa-robot" style="color:var(--accent);"></i>
-            <span>AI Assistant</span>
+            <span id="ai-panel-title">AI Assistant</span>
             <span class="ai-model-badge" id="ai-model-badge">GLM-4-Plus</span>
           </div>
-          <div style="display:flex;gap:2px;">
+          <div style="display:flex;gap:2px;align-items:center;">
+            <div class="agent-mode-toggle" style="display:flex;gap:2px;margin-right:4px;">
+              <button class="agent-mode-btn active" id="mode-chat" onclick="app.setAIMode('chat')">💬 Chat</button>
+              <button class="agent-mode-btn" id="mode-agent" onclick="app.setAIMode('agent')">🤖 Agent</button>
+            </div>
             <button class="tb-btn" id="ai-clear" data-tooltip="Clear Chat" style="width:22px;height:22px;">
               <i class="fas fa-trash" style="font-size:10px;"></i>
             </button>
