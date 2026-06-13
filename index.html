@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Xcode — GLM-Powered IDE</title>
+  <meta name="description" content="A fully-featured web-based IDE inspired by Apple Xcode, powered by GLM AI.">
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Monaco Editor -->
+  <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧑‍💻</text></svg>">
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1e1e1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+  <div class="app" id="app">
+
+    <!-- ============ TOOLBAR ============ -->
+    <div class="toolbar" id="toolbar">
+      <div class="toolbar-group">
+        <button class="tb-btn run" id="btn-run" data-tooltip="Run (⌘R)">
+          <i class="fas fa-play"></i>
+        </button>
+        <button class="tb-btn stop" id="btn-stop" data-tooltip="Stop (⌘.)" disabled>
+          <i class="fas fa-stop"></i>
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-group">
+        <select class="scheme-selector" id="scheme-selector">
+          <option>MyApp › My Mac</option>
+          <option>MyApp › iPhone 15</option>
+          <option>MyApp › iPad Pro</option>
+          <option>Tests › My Mac</option>
+        </select>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <input type="text" class="toolbar-search" id="toolbar-search" placeholder="Search... (⌘⇧F)">
+
+      <div class="toolbar-spacer"></div>
+
+      <div class="toolbar-group">
+        <button class="tb-btn" id="btn-toggle-left" data-tooltip="Toggle Navigator (⌘0)">
+          <i class="fas fa-bars"></i>
+        </button>
+        <button class="tb-btn" id="btn-toggle-right" data-tooltip="Toggle Inspector (⌃⌘0)">
+          <i class="fas fa-info-circle"></i>
+        </button>
+        <button class="tb-btn active" id="btn-toggle-ai" data-tooltip="Toggle AI Panel (⌃⌘A)">
+          <i class="fas fa-robot"></i>
+        </button>
+        <button class="tb-btn" id="btn-toggle-bottom" data-tooltip="Toggle Debug Area (⌘⇧Y)">
+          <i class="fas fa-terminal"></i>
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-group">
+        <button class="tb-btn" id="btn-settings" data-tooltip="Settings (⌘,)">
+          <i class="fas fa-cog"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ============ WORKSPACE ============ -->
+    <div class="workspace" id="workspace">
+
+      <!-- Navigator Icons Strip -->
+      <div class="navigator-icons" id="navigator-icons">
+        <button class="nav-icon active" data-nav="project" data-tooltip="Project Navigator (⌘1)">
+          <i class="fas fa-folder"></i>
+        </button>
+        <button class="nav-icon" data-nav="symbol" data-tooltip="Symbol Navigator (⌘2)">
+          <i class="fas fa-code"></i>
+        </button>
+        <button class="nav-icon" data-nav="search" data-tooltip="Search Navigator (⌘3)">
+          <i class="fas fa-magnifying-glass"></i>
+        </button>
+        <button class="nav-icon" data-nav="issue" data-tooltip="Issue Navigator (⌘4)">
+          <i class="fas fa-exclamation-triangle"></i>
+        </button>
+        <button class="nav-icon" data-nav="test" data-tooltip="Test Navigator (⌘5)">
+          <i class="fas fa-vial"></i>
+        </button>
+        <button class="nav-icon" data-nav="debug" data-tooltip="Debug Navigator (⌘6)">
+          <i class="fas fa-bug"></i>
+        </button>
+        <button class="nav-icon" data-nav="breakpoint" data-tooltip="Breakpoint Navigator (⌘7)">
+          <i class="fas fa-circle-dot"></i>
+        </button>
+        <button class="nav-icon" data-nav="git" data-tooltip="Source Control (⌘8)">
+          <i class="fab fa-git-alt"></i>
+        </button>
+      </div>
+
+      <!-- Left Sidebar (Navigator Content) -->
+      <div class="sidebar-left" id="sidebar-left">
+        <div class="sidebar-header">
+          <span class="sidebar-header-title" id="nav-title">Project</span>
+          <div class="sidebar-header-actions">
+            <button class="tb-btn" id="btn-new-file" data-tooltip="New File (⌘N)" style="width:22px;height:22px;">
+              <i class="fas fa-file-circle-plus" style="font-size:11px;"></i>
+            </button>
+            <button class="tb-btn" id="btn-new-folder" data-tooltip="New Folder" style="width:22px;height:22px;">
+              <i class="fas fa-folder-plus" style="font-size:11px;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="sidebar-content" id="navigator-content">
+          <!-- Dynamic content injected by JS -->
+        </div>
+      </div>
+
+      <!-- Editor Area -->
+      <div class="editor-area" id="editor-area">
+        <div class="editor-tabs" id="editor-tabs">
+          <!-- Tabs injected by JS -->
+        </div>
+        <div class="editor-container" id="editor-container">
+          <!-- Welcome screen shown initially -->
+          <div class="welcome-screen" id="welcome-screen">
+            <div class="welcome-logo">🧑‍💻</div>
+            <div class="welcome-title">AI-Xcode</div>
+            <div class="welcome-subtitle">GLM-Powered IDE — No account required to start coding</div>
+            <div class="welcome-actions">
+              <button class="modal-btn primary" onclick="document.getElementById('btn-settings').click()">
+                <i class="fas fa-key"></i> Set API Key
+              </button>
+              <button class="modal-btn" onclick="app.newFile()">
+                <i class="fas fa-file"></i> New File
+              </button>
+            </div>
+          </div>
+          <!-- Monaco container (hidden until file opened) -->
+          <div id="monaco-container" style="display:none; flex:1; position:relative;">
+            <div id="monaco-editor" style="width:100%;height:100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Sidebar (Inspector) -->
+      <div class="sidebar-right" id="sidebar-right">
+        <div class="sidebar-header">
+          <span class="sidebar-header-title">Inspectors</span>
+        </div>
+        <div class="sidebar-content" id="inspector-content">
+          <!-- Dynamic content -->
+        </div>
+      </div>
+
+      <!-- AI Panel -->
+      <div class="ai-panel" id="ai-panel">
+        <div class="ai-header">
+          <div class="ai-header-title">
+            <i class="fas fa-robot" style="color:var(--accent);"></i>
+            <span>AI Assistant</span>
+            <span class="ai-model-badge" id="ai-model-badge">GLM-4-Plus</span>
+          </div>
+          <div style="display:flex;gap:2px;">
+            <button class="tb-btn" id="ai-clear" data-tooltip="Clear Chat" style="width:22px;height:22px;">
+              <i class="fas fa-trash" style="font-size:10px;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="ai-messages" id="ai-messages">
+          <div class="ai-message assistant">
+            <div class="ai-msg-bubble">
+              👋 Welcome to <strong>AI-Xcode</strong>! I'm your GLM-powered coding assistant.
+              <br><br>
+              I can help you:
+              <ul style="margin-left:16px;margin-top:4px;">
+                <li>Write & explain code</li>
+                <li>Find & fix bugs</li>
+                <li>Refactor & optimize</li>
+                <li>Generate tests & docs</li>
+                <li>Code review</li>
+              </ul>
+              <br>
+              Set your GLM API key in Settings to get started.
+            </div>
+          </div>
+        </div>
+        <div class="ai-input-area">
+          <div class="ai-quick-actions">
+            <button class="ai-quick-btn" data-action="explain">📖 Explain</button>
+            <button class="ai-quick-btn" data-action="bugs">🐛 Find Bugs</button>
+            <button class="ai-quick-btn" data-action="refactor">♻️ Refactor</button>
+            <button class="ai-quick-btn" data-action="tests">🧪 Tests</button>
+            <button class="ai-quick-btn" data-action="review">🔍 Review</button>
+            <button class="ai-quick-btn" data-action="docs">📝 Docs</button>
+          </div>
+          <div class="ai-input-wrapper">
+            <textarea class="ai-input" id="ai-input" placeholder="Ask AI anything... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+            <button class="ai-send-btn" id="ai-send" data-tooltip="Send">
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ BOTTOM PANEL ============ -->
+    <div class="panel-bottom" id="panel-bottom">
+      <div class="panel-tabs">
+        <button class="panel-tab active" data-panel="console">
+          <i class="fas fa-terminal"></i> Console
+        </button>
+        <button class="panel-tab" data-panel="build">
+          <i class="fas fa-hammer"></i> Build
+        </button>
+        <button class="panel-tab" data-panel="debug">
+          <i class="fas fa-bug"></i> Debug
+        </button>
+        <button class="panel-tab" data-panel="terminal">
+          <i class="fas fa-chevron-right"></i> Terminal
+        </button>
+      </div>
+      <div class="panel-content" id="panel-content">
+        <!-- Dynamic content -->
+      </div>
+    </div>
+
+    <!-- ============ STATUS BAR ============ -->
+    <div class="statusbar" id="statusbar">
+      <span class="statusbar-item" id="status-git">
+        <i class="fab fa-git-alt"></i> main
+      </span>
+      <span class="statusbar-spacer"></span>
+      <span class="statusbar-item" id="status-errors">
+        <i class="fas fa-times-circle"></i> 0 errors
+      </span>
+      <span class="statusbar-item" id="status-warnings">
+        <i class="fas fa-exclamation-triangle"></i> 0 warnings
+      </span>
+      <span class="statusbar-item" id="status-cursor">Ln 1, Col 1</span>
+      <span class="statusbar-item" id="status-language">Plain Text</span>
+      <span class="statusbar-item" id="status-encoding">UTF-8</span>
+      <span class="statusbar-item" id="status-ai">
+        <i class="fas fa-robot"></i> GLM Ready
+      </span>
+    </div>
+
+  </div>
+
+  <!-- ============ COMMAND PALETTE ============ -->
+  <div class="cmd-palette-overlay" id="cmd-overlay">
+    <div class="cmd-palette">
+      <input type="text" class="cmd-input" id="cmd-input" placeholder="Type a command..." autocomplete="off">
+      <div class="cmd-results" id="cmd-results"></div>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS MODAL ============ -->
+  <div class="modal-overlay" id="settings-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <i class="fas fa-cog"></i> Settings
+      </div>
+      <div class="modal-body" id="settings-body">
+        <div class="inspector-section">
+          <div class="inspector-header"><span class="inspector-title">GLM API Configuration</span></div>
+          <div class="inspector-body" style="display:block;">
+            <div class="inspector-row"><span class="inspector-label">API Key</span></div>
+            <input type="password" class="inspector-input" id="setting-api-key" placeholder="Enter GLM API Key..." style="margin-top:4px;">
+            <div class="inspector-row" style="margin-top:8px;">
+              <span class="inspector-label">Model</span>
+              <select class="inspector-input" id="setting-model" style="width:auto;">
+                <option value="glm-4-plus">GLM-4-Plus (Best Quality)</option>
+                <option value="glm-4">GLM-4 (Standard)</option>
+                <option value="glm-4-flash">GLM-4-Flash (Fastest)</option>
+                <option value="glm-4-long">GLM-4-Long (Long Context)</option>
+              </select>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Completion Model</span>
+              <select class="inspector-input" id="setting-completion-model" style="width:auto;">
+                <option value="glm-4-flash">GLM-4-Flash (Recommended)</option>
+                <option value="glm-4">GLM-4</option>
+                <option value="glm-4-plus">GLM-4-Plus</option>
+              </select>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Temperature</span>
+              <input type="range" id="setting-temp" min="0" max="1" step="0.1" value="0.7" style="flex:1;">
+              <span id="setting-temp-val" style="width:30px;text-align:right;">0.7</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Auto-completion</span>
+              <input type="checkbox" id="setting-autocomplete" checked>
+            </div>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-header"><span class="inspector-title">Editor</span></div>
+          <div class="inspector-body" style="display:block;">
+            <div class="inspector-row">
+              <span class="inspector-label">Theme</span>
+              <select class="inspector-input" id="setting-theme" style="width:auto;">
+                <option value="dark">Dark (Xcode Default)</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Font Size</span>
+              <input type="number" class="inspector-input" id="setting-fontsize" value="14" style="width:60px;">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Tab Size</span>
+              <input type="number" class="inspector-input" id="setting-tabsize" value="4" style="width:60px;">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Minimap</span>
+              <input type="checkbox" id="setting-minimap" checked>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Word Wrap</span>
+              <input type="checkbox" id="setting-wordwrap">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn" id="settings-cancel">Cancel</button>
+        <button class="modal-btn primary" id="settings-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Monaco Editor Loader -->
+  <script>
+    var require = { paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } };
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
+  <!-- App Scripts (ES6 Modules) -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
