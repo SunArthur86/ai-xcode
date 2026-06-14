@@ -612,6 +612,28 @@ export class FileTree {
     } else {
       items.push({ label: 'Open', icon: 'fa-external-link-alt', action: () => this.app.openFile(node.path) });
       items.push({ divider: true });
+
+      // Feature 3: File Comparison context menu
+      const compareAgainst = this.app.editor?.getCompareAgainst?.();
+      if (compareAgainst && compareAgainst !== node.path) {
+        const cmpName = compareAgainst.includes('/') ? compareAgainst.slice(compareAgainst.lastIndexOf('/') + 1) : compareAgainst;
+        items.push({
+          label: `Compare with ${cmpName}`,
+          icon: 'fa-exchange-alt',
+          action: () => this.app.editor.compareFiles(compareAgainst, node.path),
+        });
+        items.push({ divider: true });
+      }
+      items.push({
+        label: 'Set as Compare Base',
+        icon: 'fa-balance-scale',
+        action: () => {
+          this.app.editor?.setCompareAgainst?.(node.path);
+          this.app.notifications?.toast?.(`📊 Compare base set: ${node.name}`, 'info', 1500);
+        },
+      });
+      items.push({ divider: true });
+
       items.push({ label: this._bulkMode ? 'Select' : 'Enable Bulk Select', icon: 'fa-check-square', action: () => {
         if (!this._bulkMode) this.toggleBulkMode();
         this._selectedFiles.add(node.path);

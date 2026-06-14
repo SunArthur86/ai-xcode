@@ -138,6 +138,9 @@ class AIXcodeApp {
     this.setupUIPolish();      // UI/UX Polish features
     this.applySettings();
 
+    // ═══ Feature 5: Multi-tab Session Restore ═══
+    this.restoreTabSession();
+
     // Render initial state
     this.fileTree.render();
     this.showNavigator('project');
@@ -315,6 +318,11 @@ class AIXcodeApp {
       this.updateAutoSaveIndicator();
       this.notifications.toast(`Auto-save: ${this.autoSaveEnabled ? 'On' : 'Off'}`, 'info', 1200);
     });
+
+    // ═══ Feature 8: Column Selection toggle button ═══
+    document.getElementById('btn-column-mode')?.addEventListener('click', () => {
+      this.editor?.toggleColumnSelectionMode?.();
+    });
   }
 
   // ====== Navigator Tabs ======
@@ -349,7 +357,10 @@ class AIXcodeApp {
       case 'issue': this.renderIssueNavigator(container); break;
       case 'test': this.renderTestNavigator(container); break;
       case 'debug': this.debugger.renderNavigator(container); break;
-      case 'breakpoint': this.debugger.renderBreakpoints(container); break;
+      case 'breakpoint':
+        this.debugger.renderBreakpoints(container);
+        this.renderBookmarksNavigator(container); // Feature 1: bookmarks section
+        break;
       case 'git': this.gitUI.render(container); break;
     }
   }
@@ -514,6 +525,8 @@ class AIXcodeApp {
     } else {
       this.renderTabs();
     }
+    // Feature 5: Save tab session
+    this.saveTabSession();
 
     // Update inspector
     this.inspector.updateFile(path);
@@ -545,6 +558,8 @@ class AIXcodeApp {
       }
     }
     this.renderTabs();
+    // Feature 5: Save tab session
+    this.saveTabSession();
   }
 
   renderTabs() {
@@ -789,6 +804,34 @@ class AIXcodeApp {
       if (e.shiftKey && e.key === '?' && !this._isTypingInInput(e)) {
         e.preventDefault();
         this.showShortcutsHelp();
+      }
+
+      // ═══ Feature 1: Bookmark Shortcuts ═══
+      // Ctrl/Cmd+F2 — Toggle bookmark on current line
+      if (meta && e.key === 'F2') {
+        e.preventDefault();
+        this.editor?.toggleBookmark?.();
+      }
+      // F2 (no modifiers) — Next bookmark
+      if (!meta && !e.shiftKey && !e.altKey && e.key === 'F2') {
+        // Only trigger when editor is focused or not in an input
+        if (!this._isTypingInInput(e)) {
+          e.preventDefault();
+          this.editor?.nextBookmark?.();
+        }
+      }
+      // Shift+F2 — Previous bookmark
+      if (!meta && e.shiftKey && !e.altKey && e.key === 'F2') {
+        if (!this._isTypingInInput(e)) {
+          e.preventDefault();
+          this.editor?.prevBookmark?.();
+        }
+      }
+
+      // ═══ Feature 7: Find in Selection (Ctrl+Shift+L) ═══
+      if (meta && e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        this.editor?.findInSelection?.();
       }
     });
 
@@ -1272,6 +1315,12 @@ class AIXcodeApp {
       ['Format Document', '⌘⇧F (in palette)'],
       ['Ask AI', '⌘I'],
       ['Toggle Minimap', 'Click map button'],
+      ['Toggle Bookmark', '⌘F2'],
+      ['Next Bookmark', 'F2'],
+      ['Previous Bookmark', '⇧F2'],
+      ['Find in Selection', '⌘⇧L'],
+      ['Toggle Column Mode', 'Toolbar button'],
+      ['Smart Paste', 'Auto on ⌘V'],
     ];
 
     const rows = shortcuts.map(([desc, key]) =>
@@ -1295,9 +1344,19 @@ class AIXcodeApp {
     document.body.appendChild(overlay);
     // Trigger CSS transition
     requestAnimationFrame(() => overlay.classList.add('visible'));
-    // Esc to close
-    overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') overlay.classList.remove('visible');
+    // Esc to close + click outside
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        overlay.classList.remove('visible');
+        document.removeEventListener('keydown', escHandler);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove('visible');
+        document.removeEventListener('keydown', escHandler);
+      }
     });
   }
 
@@ -1450,6 +1509,115 @@ class AIXcodeApp {
       if (this.editor?.monaco) this.editor.monaco.layout();
       if (this.splitEditor) this.splitEditor.layout();
     }, 100);
+  }
+
+  // ═══ Feature 5: Multi-tab Session Restore ═══
+
+  /**
+   * Save the currently open tab paths and active tab to localStorage.
+   */
+  saveTabSession() {
+    try {
+      const data = {
+        tabs: this.openTabs,
+        activeTab: this.activeFile,
+      };
+      localStorage.setItem('ai-xcode-open-tabs', JSON.stringify(data));
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
+  /**
+   * Restore previously open tabs from localStorage.
+   * Called during init().
+   */
+  async restoreTabSession() {
+    try {
+      const raw = localStorage.getItem('ai-xcode-open-tabs');
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data.tabs || !Array.isArray(data.tabs) || data.tabs.length === 0) return;
+
+      // Open each tab (only those that still exist in VFS)
+      for (const path of data.tabs) {
+        const file = this.vfs._cache.get(path);
+        if (file && !file.isFolder) {
+          if (!this.openTabs.includes(path)) {
+            this.openTabs.push(path);
+            // Create model for each file so switching tabs is instant
+            await this.editor.openFile(path, file.content, file.language);
+          }
+        }
+      }
+
+      // Restore active tab
+      if (data.activeTab && this.openTabs.includes(data.activeTab)) {
+        await this.openFile(data.activeTab);
+      } else if (this.openTabs.length > 0) {
+        await this.openFile(this.openTabs[0]);
+      }
+
+      this.renderTabs();
+    } catch (e) {
+      console.warn('[AIXcodeApp] Failed to restore tab session:', e);
+    }
+  }
+
+  // ═══ Feature 1: Bookmarks in Breakpoint Navigator ═══
+
+  /**
+   * Render the bookmark section in the breakpoint navigator.
+   * Called when the breakpoint navigator is shown.
+   * @param {HTMLElement} container
+   */
+  renderBookmarksNavigator(container) {
+    const allBookmarks = [];
+    if (this.editor?.bookmarks) {
+      for (const [path, lines] of this.editor.bookmarks) {
+        for (const line of lines) {
+          allBookmarks.push({ path, line });
+        }
+      }
+    }
+
+    if (allBookmarks.length === 0) return;
+
+    const section = document.createElement('div');
+    section.className = 'bookmark-section';
+    section.style.cssText = 'border-top:1px solid var(--border-primary);margin-top:8px;';
+    section.innerHTML = `<div style="padding:6px 12px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">🔖 Bookmarks (${allBookmarks.length})</div>`;
+
+    for (const bm of allBookmarks) {
+      const name = bm.path.includes('/') ? bm.path.slice(bm.path.lastIndexOf('/') + 1) : bm.path;
+      const item = document.createElement('div');
+      item.className = 'file-tree-item';
+      item.style.paddingLeft = '12px';
+      item.innerHTML = `
+        <span class="icon" style="color:var(--warning);">
+          <i class="fas fa-bookmark"></i>
+        </span>
+        <span class="name">${name}:${bm.line}</span>
+        <span class="badge" style="font-size:9px;color:var(--text-tertiary);">${bm.path}</span>
+      `;
+      item.addEventListener('click', () => {
+        this.openFile(bm.path, bm.line);
+      });
+      section.appendChild(item);
+    }
+    container.appendChild(section);
+  }
+
+  // ═══ Feature 8: Column Mode Indicator ═══
+
+  /**
+   * Update the column selection mode indicator in the status bar.
+   * @param {boolean} isActive
+   */
+  updateColumnModeIndicator(isActive) {
+    const el = document.getElementById('status-column-mode');
+    if (!el) return;
+    el.style.display = isActive ? 'flex' : 'none';
   }
 
   // ====== Logging ======

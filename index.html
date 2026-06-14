@@ -203,6 +203,9 @@
           <button class="tb-btn" id="btn-split-editor" data-tooltip="Split Editor" style="width:24px;height:24px;">
             <i class="fas fa-columns" style="font-size:11px;"></i>
           </button>
+          <button class="tb-btn" id="btn-column-mode" data-tooltip="Toggle Column Selection" style="width:24px;height:24px;">
+            <i class="fas fa-text-height" style="font-size:11px;"></i>
+          </button>
         </div>
         <!-- File path breadcrumb (#3) -->
         <div class="editor-breadcrumb" id="editor-breadcrumb">
@@ -369,6 +372,10 @@
       </span>
       <span class="statusbar-item" id="status-language" data-tooltip="Click to toggle Word Wrap">Plain Text</span>
       <span class="statusbar-item" id="status-encoding">UTF-8</span>
+      <span class="statusbar-item" id="status-wordcount" style="font-size:11px;color:var(--text-secondary);"></span>
+      <span class="statusbar-item" id="status-column-mode" style="display:none;" data-tooltip="Column Selection Mode Active">
+        <i class="fas fa-bars" style="color:var(--accent);"></i> Column
+      </span>
       <span class="statusbar-item" id="status-ai">
         <i class="fas fa-robot"></i> GLM Ready
       </span>

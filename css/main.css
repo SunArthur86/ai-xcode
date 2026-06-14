@@ -1383,3 +1383,92 @@ body.zen-mode .editor-area { width: 100vw; }
 
 /* REST tester */
 .dt-rest-tool textarea { margin-bottom: 8px; }
+
+/* ========================================
+   FEATURE 1: Bookmark Glyph (Monaco glyph margin)
+   ======================================== */
+.bookmark-glyph {
+  background: linear-gradient(135deg, #ffd60a, #ff9f0a);
+  border-radius: 2px;
+  width: 8px !important;
+  height: 8px !important;
+  margin-left: 4px;
+  margin-top: 5px;
+  opacity: 0.9;
+  cursor: pointer;
+  box-shadow: 0 0 3px rgba(255, 214, 10, 0.6);
+}
+
+/* ========================================
+   FEATURE 2: Word Count Status Bar Item
+   ======================================== */
+#status-wordcount {
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 0 8px;
+}
+
+/* ========================================
+   FEATURE 8: Column Selection Indicator
+   ======================================== */
+#status-column-mode {
+  background: var(--accent-bg);
+  border-radius: 3px;
+  padding: 0 6px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ========================================
+   FEATURE 1: Bookmark Navigator Section
+   ======================================== */
+.bookmark-section .file-tree-item {
+  cursor: pointer;
+}
+.bookmark-section .file-tree-item:hover {
+  background: var(--bg-hover);
+}
+
+/* ========================================
+   FEATURE 3: Diff Editor Overlay
+   ======================================== */
+#diff-editor-container .monaco-editor .margin,
+#diff-editor-container .monaco-editor .editor-scrollable {
+  background: var(--bg-primary);
+}
+
+/* ========================================
+   FEATURE 6: Smart Paste Toast
+   ======================================== */
+.smart-paste-toast {
+  min-width: 340px;
+  padding: 10px 14px;
+  animation: toast-slide-in 0.3s ease;
+}
+.smart-paste-toast.visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+@keyframes toast-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ========================================
+   FEATURE 4: Ghost Text Suggestion (AI inline hint)
+   ======================================== */
+.ghost-text-suggestion {
+  color: var(--text-tertiary) !important;
+  opacity: 0.5;
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* ========================================
+   FEATURE 8: Column selection toolbar button active state
+   ======================================== */
+#btn-column-mode.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
